@@ -45,11 +45,11 @@ const workers: WorkerDef[] = [
 // Home positions — each worker always faces the same direction
 // Workers sit BELOW their desks — feet at y:460, heads peek above desk edge
 const homePositions: Record<WorkerId, WorkerPos> = {
-  planner:    { x: 139, y: 308, facing: 'back' },
-  reviewer:   { x: 365, y: 320, facing: 'back' },
-  coder:      { x: 555, y: 322, facing: 'back' },
-  tester:     { x: 775, y: 335, facing: 'back' },
-  supervisor: { x: 942, y: 325, facing: 'back' },
+  planner:    { x: 184, y: 345, facing: 'back' },
+  reviewer:   { x: 394, y: 345, facing: 'back' },
+  coder:      { x: 595, y: 345, facing: 'back' },
+  tester:     { x: 805, y: 345, facing: 'back' },
+  supervisor: { x: 1015, y: 345, facing: 'back' },
 };
 
 // Per-phase position overrides for ACTIVE workers (pipeline movements)
@@ -57,29 +57,29 @@ const homePositions: Record<WorkerId, WorkerPos> = {
 // S (Supervisor) is never spawned by orchestrator — no overrides for S
 const phasePositions: Record<string, Partial<Record<WorkerId, WorkerPos>>> = {
   concept: {
-    planner: { x: 139, y: 323, facing: 'back' },
+    planner: { x: 184, y: 345, facing: 'back' },
   },
   planning: {
-    planner: { x: 139, y: 323, facing: 'back' },
+    planner: { x: 184, y: 345, facing: 'back' },
   },
   'plan-review': {
-    planner:  { x: 310, y: 340, facing: 'right' },
-    reviewer: { x: 400, y: 340, facing: 'left' },
+    planner:  { x: 370, y: 345, facing: 'right' },  // A walks to B's desk with the plan
+    reviewer: { x: 394, y: 345, facing: 'left' },    // B turns to face A
   },
   coding: {
-    coder: { x: 558, y: 355, facing: 'back' },
+    coder: { x: 595, y: 345, facing: 'back' },
   },
   'code-review': {
-    coder:  { x: 600, y: 345, facing: 'left' },
-    tester: { x: 710, y: 345, facing: 'left' },
+    coder:  { x: 780, y: 345, facing: 'right' },   // C walks to D's desk with the code
+    tester: { x: 805, y: 345, facing: 'left' },     // D turns to face C
   },
   testing: {
-    coder:  { x: 710, y: 350, facing: 'right' },
-    tester: { x: 775, y: 335, facing: 'back' },
+    coder:  { x: 780, y: 345, facing: 'right' },   // C stays near D while D tests
+    tester: { x: 805, y: 345, facing: 'back' },     // D turns to test
   },
   deploy: {
-    planner: { x: 139, y: 323, facing: 'back' },
-    tester:  { x: 220, y: 345, facing: 'left' },
+    planner: { x: 184, y: 345, facing: 'back' },    // A at desk ready to deploy
+    tester:  { x: 210, y: 345, facing: 'left' },     // D walks to A's desk with final code
   },
   complete: {},
 };
@@ -172,15 +172,21 @@ function pickIdlePositions(activeWorkerIds: Set<WorkerId>, seed: number): Record
 }
 
 // Which worker is carrying a document in each phase
-// Matches actual orchestrator handoffs
+// Matches actual orchestrator flow:
+// planning: A writes plan at desk
+// plan-review: A carries plan to B, B reviews, B sends questions back to A, A answers, loop
+// coding: C builds at desk
+// code-review: C carries code to D, D reviews, D sends issues back to C, C fixes, loop
+// testing: D tests at desk, sends failures to C, C fixes, loop
+// deploy: D carries final code to A
 const phaseCarriers: Record<string, WorkerId | null> = {
   concept: null,
   planning: null,
-  'plan-review': 'planner',     // A delivers plan to B for review
+  'plan-review': 'planner',     // A carries plan to B's desk
   coding: null,
-  'code-review': 'coder',       // C delivers code to D for review (not B — B is done)
+  'code-review': 'coder',       // C carries code to D's desk
   testing: null,
-  deploy: 'tester',             // D delivers final tested code to A for deploy
+  deploy: 'tester',             // D carries final tested code to A's desk
   complete: null,
 };
 
@@ -315,34 +321,37 @@ interface DeskSetup {
   extra: DeskPos;
 }
 
+const DESK_W = 250;
+const DESK_H = 170;
+const CHAIR_Y = 280;
 const desks: DeskSetup[] = [
   {
-    desk:    { x: 85,  y: 220, w: 150, h: 125 },
-    chair:   { x: 119, y: 254, w: 48,  h: 96  },
+    desk:    { x: 55,  y: 195, w: DESK_W, h: DESK_H },
+    chair:   { x: 159, y: CHAIR_Y, w: 55,  h: 60  },
     monitor: { x: 117, y: 218, w: 48,  h: 48  },
     extra:   { x: 185, y: 238, w: 40,  h: 40  },
   },
   {
-    desk:    { x: 290, y: 226, w: 160, h: 100 },
-    chair:   { x: 343, y: 250, w: 48,  h: 96  },
+    desk:    { x: 260, y: 195, w: DESK_W, h: DESK_H },
+    chair:   { x: 364, y: CHAIR_Y, w: 55,  h: 60  },
     monitor: { x: 323, y: 222, w: 48,  h: 48  },
     extra:   { x: 400, y: 240, w: 40,  h: 40  },
   },
   {
-    desk:    { x: 490, y: 220, w: 150, h: 125 },
-    chair:   { x: 533, y: 250, w: 48,  h: 96  },
+    desk:    { x: 465, y: 195, w: DESK_W, h: DESK_H },
+    chair:   { x: 569, y: CHAIR_Y, w: 55,  h: 60  },
     monitor: { x: 523, y: 218, w: 48,  h: 48  },
     extra:   { x: 590, y: 238, w: 40,  h: 40  },
   },
   {
-    desk:    { x: 700, y: 226, w: 160, h: 100 },
-    chair:   { x: 753, y: 260, w: 48,  h: 96  },
+    desk:    { x: 670, y: 195, w: DESK_W, h: DESK_H },
+    chair:   { x: 774, y: CHAIR_Y, w: 55,  h: 60  },
     monitor: { x: 733, y: 222, w: 48,  h: 48  },
     extra:   { x: 810, y: 240, w: 40,  h: 40  },
   },
   {
-    desk:    { x: 880, y: 220, w: 150, h: 125 },
-    chair:   { x: 920, y: 250, w: 48,  h: 96  },
+    desk:    { x: 875, y: 195, w: DESK_W, h: DESK_H },
+    chair:   { x: 979, y: CHAIR_Y, w: 55,  h: 60  },
     monitor: { x: 910, y: 218, w: 48,  h: 48  },
     extra:   { x: 980, y: 238, w: 40,  h: 40  },
   },
@@ -688,7 +697,7 @@ export function LunarOfficeScene({
     // Stop pipeline walking after arrival
     const stopPipeline = window.setTimeout(() => {
       setWalkingIds(new Set());
-    }, 5500);
+    }, 2600);
     idleTimerRef.current.push(stopPipeline);
 
     // Stagger idle movements — one worker at a time, random delays
@@ -742,18 +751,20 @@ export function LunarOfficeScene({
               ? (spot.x < 210 ? 'right' as const : 'left' as const)
               : spot.x < home.x ? 'left' as const : 'right' as const;
 
-            // Start walking
+            // Walk facing the direction of movement, switch to spot facing on arrival
+            const walkFacing = spot.x < home.x ? 'left' as const : 'right' as const;
             setWalkingIds(prev => new Set([...prev, wId]));
-            setIdlePositions(prev => ({ ...prev, [wId]: { x: spot.x, y: spot.y, facing: spotFacing } }));
+            setIdlePositions(prev => ({ ...prev, [wId]: { x: spot.x, y: spot.y, facing: walkFacing } }));
 
-            // Stop walking after arrival
+            // Stop walking and switch to destination facing on arrival
             const stopTimer = window.setTimeout(() => {
               setWalkingIds(prev => {
                 const next = new Set(prev);
                 next.delete(wId);
                 return next;
               });
-            }, 5500);
+              setIdlePositions(prev => prev[wId] ? ({ ...prev, [wId]: { ...prev[wId]!, facing: spotFacing } }) : prev);
+            }, 2600);
             idleTimerRef.current.push(stopTimer);
 
             // Return home after a while — group spots: 30-60s, other spots: 3-5s
@@ -762,9 +773,9 @@ export function LunarOfficeScene({
               : 3000 + Math.random() * 2000;
             const returnTimer = window.setTimeout(() => {
               const home = homePositions[wId];
-              const returnFacing = home.x < spot.x ? 'left' as const : 'right' as const;
+              const returnWalkFacing = home.x < spot.x ? 'left' as const : 'right' as const;
               setWalkingIds(prev => new Set([...prev, wId]));
-              setIdlePositions(prev => ({ ...prev, [wId]: { x: home.x, y: home.y, facing: returnFacing } }));
+              setIdlePositions(prev => ({ ...prev, [wId]: { x: home.x, y: home.y, facing: returnWalkFacing } }));
 
               const returnStopTimer = window.setTimeout(() => {
                 setWalkingIds(prev => {
@@ -772,8 +783,8 @@ export function LunarOfficeScene({
                   next.delete(wId);
                   return next;
                 });
-                setIdlePositions(prev => ({ ...prev, [wId]: null }));
-              }, 5500);
+                setIdlePositions(prev => ({ ...prev, [wId]: null })); // null = back to homePositions facing
+              }, 2600);
               idleTimerRef.current.push(returnStopTimer);
             }, stayDuration);
             idleTimerRef.current.push(returnTimer);
@@ -807,11 +818,14 @@ export function LunarOfficeScene({
 
         // Stagger departures slightly
         const departTimer = window.setTimeout(() => {
+          const currentPos = idlePositions[wId] || homePositions[wId];
+          const groupWalkFacing = spot.x < currentPos.x ? 'left' as const : 'right' as const;
           setWalkingIds(p => new Set([...p, wId]));
-          setIdlePositions(prev => ({ ...prev, [wId]: { x: spot.x, y: spot.y, facing } }));
+          setIdlePositions(prev => ({ ...prev, [wId]: { x: spot.x, y: spot.y, facing: groupWalkFacing } }));
           const stopTimer = window.setTimeout(() => {
             setWalkingIds(p => { const n = new Set(p); n.delete(wId); return n; });
-          }, 5500);
+            setIdlePositions(prev => prev[wId] ? ({ ...prev, [wId]: { ...prev[wId]!, facing } }) : prev);
+          }, 2600);
           idleWanderRef.current.push(stopTimer);
 
           // Return home after 30-60s
@@ -823,7 +837,7 @@ export function LunarOfficeScene({
             const returnStop = window.setTimeout(() => {
               setWalkingIds(p => { const n = new Set(p); n.delete(wId); return n; });
               setIdlePositions(p => ({ ...p, [wId]: null }));
-            }, 5500);
+            }, 2600);
             idleWanderRef.current.push(returnStop);
           }, 30000 + Math.random() * 30000);
           idleWanderRef.current.push(returnTimer);
@@ -869,7 +883,7 @@ export function LunarOfficeScene({
           const stopTimer = window.setTimeout(() => {
             setWalkingIds(p => { const n = new Set(p); n.delete(wId); return n; });
             setIdlePositions(prev => ({ ...prev, [wId]: null }));
-          }, 5500);
+          }, 2600);
           idleWanderRef.current.push(stopTimer);
         } else {
           // Walk to a random spot — avoid spots occupied by other agents
@@ -899,7 +913,7 @@ export function LunarOfficeScene({
           setIdlePositions(prev => ({ ...prev, [wId]: { x: spot.x, y: spot.y, facing: spotFacing } }));
           const stopTimer = window.setTimeout(() => {
             setWalkingIds(p => { const n = new Set(p); n.delete(wId); return n; });
-          }, 5500);
+          }, 2600);
           idleWanderRef.current.push(stopTimer);
 
           // Group spots: return home after 30-60s
@@ -912,7 +926,7 @@ export function LunarOfficeScene({
               const returnStop = window.setTimeout(() => {
                 setWalkingIds(p => { const n = new Set(p); n.delete(wId); return n; });
                 setIdlePositions(p => ({ ...p, [wId]: null }));
-              }, 5500);
+              }, 2600);
               idleWanderRef.current.push(returnStop);
             }, 30000 + Math.random() * 30000);
             idleWanderRef.current.push(returnTimer);
@@ -1111,7 +1125,7 @@ export function LunarOfficeScene({
           <CSSChart x={8} y={70} w={65} h={55} type="line" />
           <CSSChart x={10} y={140} w={60} h={32} type="bar" />
           <CSSWhiteboard x={2} y={175} w={75} h={42} />
-          <CSSWaterCooler x={15} y={210} w={55} h={90} />
+          <Sprite src="/sprites/watercooler.png" x={-20} y={150} w={140} h={206} z={5} />
           <CSSChart x={1130} y={70} w={60} h={50} type="line" />
           <CSSChart x={1132} y={130} w={55} h={30} type="bar" />
           <CSSCalendar x={1132} y={170} w={55} h={50} />
@@ -1140,10 +1154,10 @@ export function LunarOfficeScene({
           )}
 
           {/* Hookah lounge — original sprites */}
-          <Sprite src="/sprites/cushion.png" x={835} y={455} w={48} h={24} z={6} />
-          <Sprite src="/sprites/cushion.png" x={951} y={455} w={48} h={24} z={6} />
-          <Sprite src="/sprites/cushion.png" x={893} y={500} w={48} h={24} z={6} />
-          <Sprite src="/sprites/hookah.png" x={884} y={424} w={72} h={72} z={21} />
+          <Sprite src="/sprites/cushion.png" x={815} y={455} w={48} h={24} z={6} />
+          <Sprite src="/sprites/cushion.png" x={931} y={455} w={48} h={24} z={6} />
+          <Sprite src="/sprites/cushion.png" x={873} y={500} w={48} h={24} z={6} />
+          <Sprite src="/sprites/hookah.png" x={846} y={382} w={128} h={128} z={21} />
           {/* Hookah smoke — only when someone is using it */}
           {hookahActive && <>
             <motion.div
@@ -1178,9 +1192,9 @@ export function LunarOfficeScene({
             />
           </>}
 
-          {/* TV + couch — CSS */}
-          <CSSRetroTV x={1060} y={350} w={96} h={96} />
-          <CSSCouchFront x={1050} y={470} w={96} h={96} />
+          {/* TV + couch */}
+          <Sprite src="/sprites/tv.png" x={990} y={295} w={230} h={158} z={6} />
+          <Sprite src="/sprites/couch.png" x={980} y={390} w={240} h={160} z={25} />
 
           {/* "Water pipe" — on Reviewer's desk */}
           <WaterPipe x={390} y={245} />
@@ -1188,10 +1202,8 @@ export function LunarOfficeScene({
           {/* Desks with chairs BEHIND (below desk = higher Y) */}
           {desks.map((d, i) => (
             <div key={`desk-${i}`}>
-              <CSSDesk x={d.desk.x} y={d.desk.y} w={d.desk.w} h={d.desk.h} />
-              <CSSChair x={d.chair.x} y={d.chair.y} w={d.chair.w} h={d.chair.h} />
-              <CSSMonitor x={d.monitor.x} y={d.monitor.y} w={d.monitor.w} h={d.monitor.h} />
-              <CSSMug x={d.extra.x} y={d.extra.y} w={d.extra.w} h={d.extra.h} />
+              <Sprite src="/sprites/desk.png" x={d.desk.x} y={d.desk.y} w={d.desk.w} h={d.desk.h} z={10} />
+              <Sprite src="/sprites/chair.png" x={d.chair.x} y={d.chair.y} w={85} h={93} z={25} />
               {activeWorkerIds.has(workers[i]?.id) && (
                 <motion.div
                   className="absolute z-[9] rounded-xl"
