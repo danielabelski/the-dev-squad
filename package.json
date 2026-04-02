@@ -1,6 +1,6 @@
 {
   "name": "the-dev-squad",
-  "version": "0.3.0-beta",
+  "version": "0.3.0",
   "private": false,
   "scripts": {
     "dev": "next dev",

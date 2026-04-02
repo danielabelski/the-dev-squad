@@ -31,7 +31,7 @@ Make agent C and D Bash usage human-mediated instead of pattern-mediated.
 
 ### Status
 
-Shipped in `v0.3.0-beta`:
+Shipped in `v0.3.0`:
 
 - Pipeline runs can now choose `Fast` or `Strict`
 - Strict mode asks for approval on every C/D Bash call
