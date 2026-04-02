@@ -125,7 +125,7 @@ The dashboard is mostly a monitoring window, but it can also become an approval 
 ║   ┌───────────┐                                                        ║
 ║   │     A     │  1. create project folder in /Projects/                ║
 ║   │  PLANNER  │  2. read build-plan-template.md                        ║
-║   │           │  3. research, write, verify, context, self-review      ║
+║   │           │  3. research, write, verify, context, self-review once  ║
 ║   │           │  4. write plan to project folder (plan.md)             ║
 ║   └───────────┘                                                        ║
 ║        │                                                               ║

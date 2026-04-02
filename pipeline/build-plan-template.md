@@ -20,13 +20,13 @@ If you can't verify something, don't put it in the plan. Research until you can.
 
 The coder session must understand what it's building, why, and how it fits into the existing codebase. Include what files to read and research before starting if necessary. The coder should be able to build without asking a single question.
 
-## 5. Review Until Bulletproof
+## 5. Self-Review Once
 
-After writing the plan, read it back as if you're a fresh session with zero context. Find every hole and fill it. Then review again. The coder gets a 100% accurate report with zero gaps.
+After writing the plan, do one deliberate self-review pass. Read it back as if you're a fresh session with zero context and fill the biggest gaps before handoff. Do not spin in an endless internal loop. B is the formal reviewer after this pass.
 
 ## 6. Send to Review
 
-When you think the plan is perfect, send it to B (Plan Reviewer). B will poke holes in it. Answer B's questions with verified information until B approves. The plan is not done until B says it's done.
+When you think the plan is review-ready, send it to B (Plan Reviewer). B will poke holes in it. Answer B's questions with verified information until B approves. The plan is not done until B says it's done.
 
 ---
 
@@ -56,6 +56,6 @@ When you think the plan is perfect, send it to B (Plan Reviewer). B will poke ho
 - [ ] Coder can build without asking a single question
 
 ### Review
-- [ ] Read the plan as a fresh session — found and filled all gaps
-- [ ] Reviewed again
+- [ ] One self-review pass completed
+- [ ] Plan is review-ready and complete enough for B to audit
 - [ ] Sent to B (Plan Reviewer) for review

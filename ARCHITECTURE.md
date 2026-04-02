@@ -22,9 +22,9 @@
 ### Phase 1: Planning
 
 5. **A** reads `build-plan-template.md` — A's playbook.
-6. **A** completes the entire checklist — research, write, verify, context, review.
+6. **A** completes the planning checklist — research, write, verify, context, one self-review pass.
 7. **A** writes the plan to `plan.md` with complete, copy-pasteable code for every file.
-8. **A** self-reviews multiple times before sending to B.
+8. **A** self-reviews once, then hands the plan to **B**. **B** is the formal external review gate.
 
 ### Phase 1b: Plan Review
 
@@ -80,7 +80,7 @@ Roadmap:
 - **Fast mode** is the current autonomous default
 - **Strict mode** is available for pipeline runs
 - **Isolated mode** will run agents inside per-project sandboxes
-- **Request-scoped approvals** are still future work; the current approval UI assumes one active pipeline at a time
+- **Request-scoped approvals** are now implemented for strict-mode Bash approvals
 - The concrete implementation plan lives in [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md)
 
 ## Agent Communication

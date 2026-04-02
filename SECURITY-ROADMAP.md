@@ -31,15 +31,16 @@ Make agent C and D Bash usage human-mediated instead of pattern-mediated.
 
 ### Status
 
-First cut shipped:
+Shipped in `v0.3.0-beta`:
 
 - Pipeline runs can now choose `Fast` or `Strict`
 - Strict mode asks for approval on every C/D Bash call
 - The selected mode is persisted in pipeline state and passed through spawned sessions
+- Approval decisions are tied to explicit request records instead of "latest project wins"
+- Approved Bash commands receive a one-time grant for the exact command that was approved
 
 Still pending inside `v0.3`:
 
-- Move approvals from "latest project on disk" to explicit request-scoped records
 - Improve the approval UI to show stronger request identity and history
 
 ### Why This Comes First

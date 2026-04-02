@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:hook": "node scripts/test-hook-contract.mjs"
+    "test:hook": "node scripts/test-hook-contract.mjs",
+    "test:signals": "node --experimental-strip-types scripts/test-structured-output-parser.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

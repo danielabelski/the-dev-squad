@@ -34,7 +34,7 @@ The Dev Squad is what happens when you automate that. The planner writes the pla
 
 The key insight: **the plan IS the code**. Agent A doesn't write a spec sheet. A writes a plan that contains every line of code the coder will need. The reviewer's job is to make sure that plan is so complete that the coder never has to ask a single question. That's what makes the builds bulletproof — by the time C starts coding, every decision has already been made and verified.
 
-I built a template and checklist that A follows — research, verify from source, write complete code, self-review, fill gaps. A can't skip steps. B can't approve until every question is answered. The pipeline enforces quality at every stage so I don't have to.
+I built a template and checklist that A follows — research, verify from source, write complete code, do one self-review pass, then hand off a review-ready plan. A can't skip steps. B can't approve until every question is answered. The pipeline enforces quality at every stage so I don't have to.
 
 My rule: the plan must be 100% bulletproof with zero errors and evidence to verify every decision before I move forward with a build. No "this should work." No "I think this package exists." Every claim is verified from source. Every code block is complete and tested in the planner's head before the coder ever sees it.
 
@@ -68,7 +68,7 @@ Each agent is a separate Claude Code session running Claude Opus 4.6. They commu
 
 **Phase 0: Concept** — You talk to Agent A. Describe what you want. A asks clarifying questions until the scope is clear. This is the only human interaction required.
 
-**Phase 1: Planning** — A reads the build plan template, researches the concept (web searches, docs, source code), and writes `plan.md` with complete, copy-pasteable code for every file. No placeholders. A self-reviews multiple times before sending to B.
+**Phase 1: Planning** — A reads the build plan template, researches the concept (web searches, docs, source code), writes `plan.md` with complete, copy-pasteable code for every file, then does one self-review pass before handing it to B. No placeholders.
 
 **Phase 1b: Plan Review** — B reads the plan and sends structured questions back to A. They loop until B is fully satisfied and approves. The plan is locked. No agent can modify it.
 
@@ -202,7 +202,7 @@ Roadmap:
 - **Fast mode** stays the default for autonomy
 - **Strict mode** is now available for pipeline runs
 - **Isolated mode** will move agents into per-project sandboxes for stronger containment
-- **Request-scoped approvals** are still future work; today the approval UI assumes one active pipeline run at a time
+- **Request-scoped approvals** are live; strict-mode approvals are now tied to explicit request records instead of "latest project wins"
 - The concrete implementation plan lives in [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md)
 
 ---

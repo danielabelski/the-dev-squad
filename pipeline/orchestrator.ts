@@ -30,6 +30,7 @@ import {
   type ApprovedBashGrant,
   type PendingApproval,
 } from '../src/lib/pipeline-approval.ts';
+import { extractStructuredSignal } from '../src/lib/pipeline-signal.ts';
 
 // ── Config ──────────────────────────────────────────────────────────
 
@@ -255,38 +256,6 @@ type AgentId = 'A' | 'B' | 'C' | 'D';
 
 // ── Streaming Claude Runner ─────────────────────────────────────────
 
-function parseStructuredOutputValue(value: unknown): Record<string, unknown> | null {
-  if (!value) return null;
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  }
-  if (Array.isArray(value)) {
-    const text = value
-      .map((item) => {
-        if (typeof item === 'string') return item;
-        if (item && typeof item === 'object' && 'text' in item) return String(item.text);
-        return '';
-      })
-      .join('');
-
-    if (text) {
-      try {
-        return JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        return null;
-      }
-    }
-  }
-  return null;
-}
-
 function buildApprovalDescription(toolInput: Record<string, unknown>): string {
   const command = typeof toolInput.command === 'string' ? toolInput.command.trim() : '';
   if (command) return command;
@@ -422,7 +391,7 @@ async function runClaudeTurn(
             const toolName = toolNames.get(toolUseId);
 
             if (!block.is_error && toolName === 'StructuredOutput') {
-              structured = parseStructuredOutputValue(block.content) || structured;
+              structured = extractStructuredSignal(block.content) || structured;
             }
 
             if (block.is_error) {
@@ -460,6 +429,7 @@ async function runClaudeTurn(
         }
       } else if (type === 'result') {
         lastResult = event;
+        structured = extractStructuredSignal(event.structured_output, event.result) || structured;
 
         const usage = event.usage as Record<string, unknown>;
         if (usage) {
@@ -719,8 +689,8 @@ async function run() {
     `3. Write the build plan to ${join(projectDir, 'plan.md')}`,
     '4. The plan must have complete, copy-pasteable code for every file.',
     '5. No descriptions — only code. The coder must build without asking a single question.',
-    '6. Self-review the plan. Read it back. Find and fill all gaps. Review again.',
-    '7. When plan.md is complete, say "Plan complete" and STOP.',
+    '6. Do one full self-review pass. Read the plan back once as a fresh session, fill any gaps you find, then stop.',
+    '7. When plan.md is complete and review-ready, say "Plan complete" and STOP.',
     '',
     'RULES:',
     '- You are ONLY writing plan.md. Do NOT write any other files.',

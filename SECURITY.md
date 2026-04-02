@@ -92,7 +92,7 @@ Pipeline sessions also set `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`, which r
 
 The build plan is in [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md). In short:
 
-1. **`v0.3`: Strict mode** — first cut shipped; C/D Bash now supports "approve every call," but the approval flow still assumes a single active pipeline run
+1. **`v0.3`: Strict mode** — shipped; C/D Bash now supports "approve every call" with request-scoped approval records and one-time grants for the exact approved command
 2. **`v0.4`: Sandboxed execution** — run agents in containers or equivalent per-project sandboxes
 3. **`v0.5`: Host-owned policy** — move approvals and enforcement outside the repo so agents cannot disable them by editing project files
 
