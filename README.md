@@ -62,11 +62,11 @@ Each agent is a separate Claude Code session running Claude Opus 4.6. They commu
 1. Open the viewer
 2. Chat with Agent A — describe what you want to build
 3. Hit START
-4. Watch 5 agents build it autonomously
+4. Watch 5 agents build it autonomously by default
 5. Your project is in ~/Builds/
 ```
 
-**Phase 0: Concept** — You talk to Agent A. Describe what you want. A asks clarifying questions until the scope is clear. This is the only human interaction required.
+**Phase 0: Concept** — You talk to Agent A. Describe what you want. A asks clarifying questions until the scope is clear. This is the only required human interaction in fast mode; strict mode can still ask for Bash approvals later.
 
 **Phase 1: Planning** — A reads the build plan template, researches the concept (web searches, docs, source code), writes `plan.md` with complete, copy-pasteable code for every file, then does one self-review pass before handing it to B. No placeholders.
 
@@ -91,6 +91,7 @@ A pixel art office where 5 agents sit at desks. You watch them work in real-time
 - **5-Panel Grid** — S (supervisor) panel on the left, A/B/C/D on the right. Each panel shows that agent's activity with auto-scroll. Click any panel to expand.
 - **Per-Panel Chat** — Each panel has its own input. Talk directly to any agent.
 - **Controls** — START, STOP, Reset, View Plan
+- **Art style** — The office scene uses a mix of original pixel sprites and CSS-drawn props
 
 When idle, agents wander the office, visit the hookah lounge, and play ping pong.
 
@@ -124,7 +125,7 @@ The Dev Squad has two modes, toggled in the dashboard:
 
 ### Pipeline Mode (default)
 
-The autonomous build pipeline. You describe what you want, and 5 agents build it without your involvement.
+The autonomous build pipeline. You describe what you want, and 5 agents build it with minimal involvement from you. In strict mode, the UI can still ask you to approve C/D Bash commands.
 
 1. **Reset** — Clear any previous session
 2. **Talk to the Planner** — Type your concept in Agent A's panel. A asks clarifying questions until the scope is clear.

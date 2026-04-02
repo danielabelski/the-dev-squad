@@ -24,7 +24,7 @@ Thanks for your interest in contributing! Here's how to get involved.
 **Good first contributions:**
 - Bug fixes
 - UI improvements to the viewer
-- Better CSS furniture/props for the office scene
+- Better pixel-art furniture/props for the office scene
 - Documentation improvements
 - New idle behaviors for agents
 
@@ -40,6 +40,8 @@ Thanks for your interest in contributing! Here's how to get involved.
 - The pipeline backend lives in `pipeline/` — orchestrator, hooks, role files
 - The viewer lives in `src/` — standard Next.js app router structure
 - Keep the pixel art style consistent if adding visual elements
+- Run `pnpm test:hook` after changing hook or orchestrator behavior
+- Run `pnpm test:signals` after changing structured signal parsing
 - Test your changes with an actual pipeline run before submitting
 
 ## Architecture
@@ -56,7 +58,7 @@ Key principles:
 
 - All assets in the public repo must be CC0, MIT, or original work
 - Do not add assets from paid sprite packs
-- CSS-drawn elements are preferred for furniture and props
+- Match the existing mixed approach: original pixel sprites and CSS-drawn props are both fine if the scene stays visually consistent
 - Character sprites must include walk cycles (front, back, left, right)
 
 ## Pull Requests

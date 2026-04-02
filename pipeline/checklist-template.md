@@ -6,7 +6,7 @@ Every handoff includes a message. The message format is specified at each handof
 
 **Build:** _(name of feature/task)_
 **Started:** _(date)_
-**Project folder:** _(A creates this in `/Projects/` based on the project theme — e.g. `/Projects/auth-refactor/`)_
+**Project folder:** _(The pipeline creates this in `~/Builds/` based on the project theme — e.g. `~/Builds/auth-refactor/`)_
 
 ---
 
@@ -31,17 +31,17 @@ If A needs clarification:
 > **Questions:**
 > 1. _(question)_
 
-User answers, A continues. This is the last human interaction. Pipeline runs autonomously from here.
+User answers, A continues. This is usually the last direct human interaction in fast mode. In strict mode, the UI can still surface Bash approvals later.
 
 ---
 
 ## Phase 1: Planning — Agent A (Planner)
 
 ### Setup (A)
-- [ ] Create project folder in `/Projects/` — name it based on the project theme or idea
-- [ ] Copy this checklist into the project folder (e.g. `/Projects/project-name/checklist.md`)
+- [ ] Work inside the project folder in `~/Builds/` — named based on the project theme or idea
+- [ ] Copy this checklist into the project folder (e.g. `~/Builds/project-name/checklist.md`)
 - [ ] Read `build-plan-template.md` — this is your playbook. Follow it step by step. Understand the principles: research first, verify from source, no guesswork, give the coder full context, review until bulletproof.
-- [ ] Create the plan file in the project folder (e.g. `/Projects/project-name/plan.md`)
+- [ ] Create the plan file in the project folder (e.g. `~/Builds/project-name/plan.md`)
 
 ### Research (A)
 - [ ] Read relevant architecture docs

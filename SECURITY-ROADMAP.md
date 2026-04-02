@@ -161,6 +161,6 @@ These are not realistic promises for the current hook architecture:
 
 ## Recommended Next Step
 
-Build `v0.3` first.
+Build `v0.4` next.
 
-It is the smallest change that materially improves safety, it uses infrastructure the app already exposes, and it creates the approval model that the later sandbox and policy phases can reuse.
+`v0.3` closed the most practical approval-flow gap. The next meaningful security improvement is sandboxed execution, because the major remaining risks now come from Bash authority and host filesystem access rather than missing approval plumbing.

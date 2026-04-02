@@ -5,7 +5,7 @@
 ## The Agents
 
 - **S — Supervisor**: Assists the user in overseeing the pipeline. Reads everything. Diagnoses issues. Not part of the autonomous flow — available on demand.
-- **A — Planner**: Chats with the user, researches, writes the build plan, deploys at the end
+- **A — Planner**: Chats with the user, researches, writes the build plan, and confirms completion at the end
 - **B — Plan Reviewer**: Pokes holes in the plan until there are none left
 - **C — Coder**: Follows the approved plan and writes the code
 - **D — Code Reviewer + Tester**: Reviews the code against the plan, then tests it
@@ -17,7 +17,7 @@
 1. The **user** chats with **A** in the viewer. This is the only required human interaction.
 2. **A** asks clarifying questions — what do you want, how should it work, any constraints?
 3. Chat happens in a staging area (`~/Builds/.staging/`). No project directory created yet.
-4. When the user hits **START**, staging moves to a real project dir and the pipeline runs autonomously.
+4. When the user hits **START**, staging moves to a real project dir and the pipeline runs autonomously by default. In strict mode, the UI can still surface Bash approvals later in the run.
 
 ### Phase 1: Planning
 
@@ -187,7 +187,7 @@ User hits RESET
         └──┬──┘
            │
      ┌─────┴─────┐
-     │     A     │  planner / deployer — talks to everyone
+     │     A     │  planner / final handoff — talks to everyone
      └─────┬─────┘
            │
      ┌─────┴─────┐
@@ -201,6 +201,7 @@ User hits RESET
      S sits above — available when things go sideways
 
      After Phase 0, pipeline runs autonomous by default
+     Strict mode can still surface approval prompts for C/D Bash
      All sessions: claude --permission-mode auto --model claude-opus-4-6
 ```
 

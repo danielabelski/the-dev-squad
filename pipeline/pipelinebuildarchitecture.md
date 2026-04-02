@@ -9,7 +9,7 @@ This file is the conceptual pipeline sketch. For the current implementation and 
 ## The Agents
 
 - **S — Supervisor**: Diagnostic assistant available on demand. Reads broadly, helps when things go wrong, and is not part of the normal autonomous loop.
-- **A — Planner**: Builds the plan, answers questions, owns the lifecycle from start to finish
+- **A — Planner**: Builds the plan, answers questions, and handles the final handoff
 - **B — Plan Reviewer**: Pokes holes in the plan until there are none left
 - **C — Coder**: Follows the approved plan and writes the code
 - **D — Code Reviewer + Tester**: Reviews the code against the plan, then tests it
@@ -21,12 +21,12 @@ This file is the conceptual pipeline sketch. For the current implementation and 
 ### Phase 0: Concept
 
 1. The **user** gives the build concept to **A**. This is the only required human interaction.
-2. **A** can ask the user clarifying questions — what do you want, how should it work, any constraints? The user answers. This is the last time the user needs to be involved.
-3. From this point forward, the pipeline runs autonomously by default. The user usually watches the dashboard rather than steering the flow, but approvals can still appear for Bash commands and future strict mode intentionally adds more human gating.
+2. **A** can ask the user clarifying questions — what do you want, how should it work, any constraints? The user answers. This is usually the last time the user needs to steer the build directly.
+3. From this point forward, the pipeline runs autonomously by default. The user usually watches the dashboard rather than steering the flow, but approvals can still appear for Bash commands in strict mode.
 
 ### Phase 1: Planning
 
-4. **A** creates a project folder in `/Projects/` — named based on the project theme or idea. All files for this build live here.
+4. The pipeline creates a project folder in `~/Builds/` — named based on the project theme or idea. All files for this build live here.
 5. **A** reads `build-plan-template.md`. This is A's playbook. A follows it step by step.
 6. **A** completes the entire checklist in the template — research, write, verify, context, review. Every checkbox must be done before A sends anything to B.
 7. **A** writes the plan to a file in the project folder (e.g. `plan.md`). This is the single source of truth.
@@ -61,7 +61,7 @@ This file is the conceptual pipeline sketch. For the current implementation and 
 ### Phase 5: Deploy
 
 26. **A** receives the reviewed and tested code.
-27. **A** commits, pushes, and deploys if applicable.
+27. The orchestrator handles final host-side commit/open behavior if applicable, and **A** confirms the build is complete.
 28. Build complete.
 
 ---
@@ -73,7 +73,7 @@ This file is the conceptual pipeline sketch. For the current implementation and 
 - **C** talks to **A** (questions) and **D** (code handoff and fixes).
 - **D** talks to **C** (review feedback) and **A** (final handoff when done).
 - Every agent is aware of every other agent and their role.
-- **A** creates a project folder in `/Projects/` for every build. All files live there — plan, checklist, code.
+- The pipeline creates a project folder in `~/Builds/` for every build. All files live there — plan, checklist, code.
 - **A** reads and follows `build-plan-template.md`. The entire checklist — research, write, verify, context, review — is A's job. A completes every checkbox before sending anything to B. A sends the plan with context so B knows what was researched and verified.
 - The plan is one file in one location. All agents reference it by path. After B approves, A locks it — no agent modifies it from that point forward.
 - If it's not verified from source, it doesn't go in the plan. If it's not in the plan, it doesn't go in the code.
@@ -117,13 +117,13 @@ The dashboard is mostly a monitoring window, but it can also become an approval 
 ║   └───────────┘   clarifying questions      └───────────┘              ║
 ║                    (if needed)                                          ║
 ║                                                                        ║
-║        last human interaction — pipeline runs autonomously from here   ║
+║   usually last direct human input — strict mode can still ask later    ║
 ║                                                                        ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║                        PHASE 1: PLANNING                               ║
 ║                                                                        ║
 ║   ┌───────────┐                                                        ║
-║   │     A     │  1. create project folder in /Projects/                ║
+║   │     A     │  1. work inside project folder in ~/Builds/            ║
 ║   │  PLANNER  │  2. read build-plan-template.md                        ║
 ║   │           │  3. research, write, verify, context, self-review once  ║
 ║   │           │  4. write plan to project folder (plan.md)             ║
@@ -196,9 +196,10 @@ The dashboard is mostly a monitoring window, but it can also become an approval 
 ║   └───────────┘                                │     A     │           ║
 ║                                                │  PLANNER  │           ║
 ║                                                │           │           ║
-║                                                │ • commit  │           ║
-║                                                │ • push    │           ║
-║                                                │ • deploy  │           ║
+║                                                │ • confirm │           ║
+║                                                │   complete│           ║
+║                                                │ • final   │           ║
+║                                                │   handoff │           ║
 ║                                                └───────────┘           ║
 ║                                                     │                  ║
 ║                                                   DONE                 ║
