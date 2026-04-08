@@ -38,6 +38,8 @@ When the user chats with the supervisor in pipeline mode, the chat route now inj
 7. The **Planner** writes the plan to `plan.md` with complete, copy-pasteable code for every file.
 8. The **Planner** self-reviews once, then hands the plan to the **Plan Reviewer**. The reviewer is the formal external review gate.
 
+For larger builds, this phase can legitimately take 10-15 minutes or longer because the planner is verifying packages, docs, and architecture details before the team starts coding.
+
 ### Phase 1b: Plan Review
 
 9. The **Plan Reviewer** reads the plan and sends structured questions back to the **Planner**.
