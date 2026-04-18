@@ -9,13 +9,19 @@ const STAGING_DIR = join(BUILDS_DIR, '.staging');
 const MANUAL_DIR = join(BUILDS_DIR, '.manual');
 
 const EMPTY_STATE = {
-  concept: '', projectDir: '', currentPhase: 'concept', securityMode: 'fast', runGoal: 'full-build', stopAfterPhase: 'none', pipelineStatus: 'idle', activeAgent: '',
-  agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', S: 'idle' },
+  concept: '', projectDir: '', currentPhase: 'concept', securityMode: 'fast', runGoal: 'full-build', runFinalAudit: false, stopAfterPhase: 'none', pipelineStatus: 'idle', activeAgent: '',
+  agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' },
   sessions: {}, buildComplete: false,
   usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: 0 },
   runtime: { ...EMPTY_RUNTIME },
   events: [],
+  auditFindings: [],
+  auditDeployPending: false,
+  auditActionInFlight: false,
 };
+
+const VALID_RESUME_ACTIONS = ['none', 'continue-approved-plan', 'resume-stalled-turn', 'audit-send-to-c', 'audit-dismiss', 'audit-deploy'] as const;
+const VALID_PIPELINE_STATUSES = ['idle', 'running', 'paused', 'awaiting-audit-decision', 'complete', 'failed'] as const;
 
 function normalizeState(data: Record<string, unknown>) {
   return {
@@ -23,17 +29,22 @@ function normalizeState(data: Record<string, unknown>) {
     ...data,
     securityMode: data.securityMode === 'strict' ? 'strict' : 'fast',
     runGoal: data.runGoal === 'plan-only' ? 'plan-only' : 'full-build',
+    runFinalAudit: data.runFinalAudit === true,
     stopAfterPhase: data.stopAfterPhase === 'plan-review' ? 'plan-review' : 'none',
-    resumeAction: data.resumeAction === 'continue-approved-plan' || data.resumeAction === 'resume-stalled-turn'
+    resumeAction: VALID_RESUME_ACTIONS.includes(data.resumeAction as typeof VALID_RESUME_ACTIONS[number])
       ? data.resumeAction
       : 'none',
-    pipelineStatus: typeof data.pipelineStatus === 'string'
+    resumeActionTarget: typeof data.resumeActionTarget === 'string' ? data.resumeActionTarget : undefined,
+    pipelineStatus: typeof data.pipelineStatus === 'string' && VALID_PIPELINE_STATUSES.includes(data.pipelineStatus as typeof VALID_PIPELINE_STATUSES[number])
       ? data.pipelineStatus
       : (data.buildComplete ? 'complete' : (data.currentPhase && data.currentPhase !== 'concept' ? 'running' : 'idle')),
     agentStatus: { ...EMPTY_STATE.agentStatus, ...(data.agentStatus as Record<string, string> | undefined) },
     usage: { ...EMPTY_STATE.usage, ...(data.usage as Record<string, number> | undefined) },
     runtime: data.runtime && typeof data.runtime === 'object' ? data.runtime : { ...EMPTY_RUNTIME },
     events: Array.isArray(data.events) ? data.events : [],
+    auditFindings: Array.isArray(data.auditFindings) ? data.auditFindings : [],
+    auditDeployPending: data.auditDeployPending === true,
+    auditActionInFlight: data.auditActionInFlight === true,
   };
 }
 
@@ -87,6 +98,7 @@ export async function GET(req: NextRequest) {
     const isVisible =
       pipelineStatus === 'running' ||
       pipelineStatus === 'paused' ||
+      pipelineStatus === 'awaiting-audit-decision' ||
       pipelineStatus === 'failed' ||
       pipelineStatus === 'complete' ||
       !!data.buildComplete;

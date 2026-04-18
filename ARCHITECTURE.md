@@ -1,6 +1,6 @@
 # Architecture
 
-The Dev Squad is Claude with its own dev team. One supervisor. Four specialists. Two modes. Two interfaces. In **Pipeline Mode**, the supervisor can run the team for you while you keep everything in one place. In **Manual Mode**, you are the orchestrator — five Claude sessions with expertise labels, no automation, you direct everything, while Claude Code's own permission prompts still apply inside those direct sessions. The same team can now be used through both the visual Office View and the simpler Supervisor-first Squad View.
+The Dev Squad is Claude with its own dev team. One supervisor. Four core specialists, plus one optional security auditor. Two modes. Two interfaces. In **Pipeline Mode**, the supervisor can run the team for you while you keep everything in one place. In **Manual Mode**, you are the orchestrator — multiple Claude sessions with expertise labels, no automation, you direct everything, while Claude Code's own permission prompts still apply inside those direct sessions. The same team can now be used through both the visual Office View and the simpler Supervisor-first Squad View.
 
 ## The Team
 
@@ -9,6 +9,7 @@ The Dev Squad is Claude with its own dev team. One supervisor. Four specialists.
 - **Plan Reviewer (`B`)**: Pokes holes in the plan until there are none left
 - **Coder (`C`)**: Follows the approved plan and writes the code
 - **Tester (`D`)**: Reviews the code against the plan, then tests it
+- **Security Auditor (`E`)** *(optional)*: Read-only OWASP-class audit after testing succeeds. Runs only when the Security Audit toggle is on at build start. Severity-ranked findings; the user decides per finding whether to send a scoped fix to `C` (with `D` verification and `E` re-audit) or dismiss. Deploy is user-gated.
 
 ## Product Direction
 
@@ -18,7 +19,9 @@ The product is moving toward "give Claude a dev team":
 - the Planner, Plan Reviewer, Coder, and Tester are the worker specialists
 - the whole team follows the same doctrine: `build-plan-template.md`, `checklist.md`, and the locked `plan.md`
 
-Today, pipeline mode can now start from the **Supervisor** as well as direct planner chat. The supervisor has the first real control-plane actions: saved-session recovery for planning/review turns, `plan-only`, `stop after review`, `continue build` from an approved plan, and chat-triggered start/stop/resume actions. The next implementation step is to keep moving authority toward the supervisor while leaving the actual execution path deterministic in host/orchestrator code. The concrete build plan for that transition lives in [SUPERVISOR-BUILD-PLAN.md](SUPERVISOR-BUILD-PLAN.md). The concrete `v0.4` isolation plan lives in [SANDBOX-RUNNER-PLAN.md](SANDBOX-RUNNER-PLAN.md).
+Today, pipeline mode can now start from the **Supervisor** as well as direct planner chat. The supervisor has the first real control-plane actions: saved-session recovery for planning/review turns, `plan-only`, `stop after review`, `continue build` from an approved plan, and chat-triggered start/stop/resume actions. The next implementation step is to keep moving authority toward the supervisor while leaving the actual execution path deterministic in host/orchestrator code.
+
+Sandboxed/isolated execution is **not** an active roadmap item. The Docker runner code remains in the tree (`pipeline/runner.ts`) for the narrow cases where it works, but Claude Code subscription auth inside containers is not reliable enough to make sandboxed execution the default. See [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md) for the honest status.
 
 When the user chats with the supervisor in pipeline mode, the chat route now injects a live team snapshot: current phase, pipeline status, run goal, active turn, recent events, pending approvals, and recommended control actions. The UI also derives a proactive supervisor update from the same state so the user sees a manager-style summary without having to inspect raw logs, and the orchestrator now emits supervisor-language chat updates at key transitions like planning start, review handoff, approval waits, pauses, resumes, and completion. Before a run exists, the supervisor captures the concept locally and waits for an explicit start command instead of freelancing. That makes the supervisor much closer to a real team manager instead of a generic diagnostic assistant.
 
@@ -67,9 +70,21 @@ For larger builds, this phase can legitimately take 10-15 minutes or longer beca
 20. If tests fail, the **Tester** sends failures to the **Coder**. The coder fixes and the tester tests again.
 21. Loops until all tests pass.
 
+### Phase 4b: Security Audit (optional)
+
+If the user enabled the **Security Audit** toggle at build start AND the tester reported all tests passing:
+
+22a. The **Security Auditor** (`E`) reads the locked plan and every file the coder produced. Static read-only analysis only — no Bash, no Write/Edit, no Web egress.
+22b. `E` audits for OWASP Top 10, path traversal, ReDoS, and missing input validation on public boundaries. Each finding is ranked `critical` / `high` / `medium` / `low` calibrated by exploitability and prerequisites.
+22c. The pipeline pauses with `pipelineStatus = 'awaiting-audit-decision'`. The orchestrator process exits cleanly. The user reviews findings in the Security Audit panel.
+22d. For each finding, the user picks: **Send to C** (orchestrator respawns, runs a scoped fix pass — `C` fixes only that finding, `D` runs tests to verify, `E` re-audits only that finding, status updates to Resolved or Still Open) or **Dismiss** (logged in events).
+22e. The user clicks **Deploy now** when satisfied. A confirmation modal appears (warns if any findings remain unresolved). On confirm, the orchestrator runs the deploy step.
+
+If the toggle is off, this phase does not run and the pipeline goes straight from testing to deploy.
+
 ### Phase 5: Deploy
 
-22. Build complete. Project is in `~/Builds/<project-name>/`.
+23. Build complete. Project is in `~/Builds/<project-name>/`.
 
 ## Enforcement: Scripts, Not Prompts
 
@@ -83,7 +98,10 @@ Restrictions are enforced by a `PreToolUse` hook (`pipeline/.claude/hooks/approv
 | **Plan Reviewer (`B`)** | Blocked | Blocked | Blocked |
 | **Coder (`C`)** | Current project only (except plan.md) | Safe=auto, dangerous=approval | Blocked |
 | **Tester (`D`)** | Blocked | Safe=auto, dangerous=approval | Blocked |
+| **Security Auditor (`E`)** *(optional)* | Blocked | Blocked | Blocked |
 | **Supervisor (`S`)** | `~/Builds/` only (no `.claude/`) | Yes (restricted) | Blocked |
+
+Agent E is also blocked from `WebSearch` and `WebFetch` — it does pure static analysis on the project files only.
 
 Additional protections:
 - `Write`/`Edit`/`NotebookEdit` are jailed to the active project for the planner/coder and blocked for the reviewer/tester
@@ -96,8 +114,9 @@ Additional protections:
 Roadmap:
 - **Fast mode** is the current autonomous default
 - **Strict mode** is available for pipeline runs
-- **Isolated mode** will run agents inside per-project sandboxes
-- **Request-scoped approvals** are now implemented for strict-mode Bash approvals
+- **Optional Security Audit (Agent E)** is live in `v0.4.0` — read-only OWASP-class pass with severity ranking, user-controlled fix loop, and explicit deploy gate
+- **Request-scoped approvals** are implemented for strict-mode Bash approvals
+- **Sandboxed/isolated execution** is **not** an active roadmap item; the Docker runner code remains for narrow cases but is too unreliable to default
 - The concrete implementation plan lives in [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md)
 
 ## Agent Communication
@@ -116,6 +135,13 @@ Agents don't parse free text. They communicate via structured JSON schemas:
 // D testing C's code
 { "status": "passed" }
 { "status": "failed", "failures": ["PUT /users returns 500 on empty body"] }
+
+// E auditing (optional final pass)
+{ "status": "approved" }
+{ "status": "issues", "issues": [
+    { "severity": "critical", "finding": "[src/api/auth.ts:42] SQL injection: req.body.username flows into raw SQL. Use parameterized queries." }
+  ]
+}
 ```
 
 The orchestrator routes these signals and uses `isPositiveSignal()` to normalize approval variants.
@@ -140,7 +166,7 @@ claude -p "<prompt>" \
 - Role files and shared doctrine provide the team model; hooks provide the lighter safety/discipline guardrails around it
 - Session ids are now persisted mid-turn so stalled A/B runs can be recovered instead of always forcing a reset
 - Stall detection: 5-minute idle timeout, up to 3 auto-resume attempts (A, B, and D), bash-aware (long-running commands don't trigger false stalls)
-- Future hardening replaces direct host spawning with a sandbox runner; see [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md) and [SANDBOX-RUNNER-PLAN.md](SANDBOX-RUNNER-PLAN.md)
+- A `Runner` abstraction (`pipeline/runner.ts`) sits between the orchestrator and the `claude` CLI. `HostRunner` is the default; `DockerRunner` is kept for the narrow cases it works in but is not the default — see [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md) for the honest sandboxing stance
 
 ## The Orchestrator
 

@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { basename, join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 
-export type PipelineAgentId = 'A' | 'B' | 'C' | 'D' | 'S';
+export type PipelineAgentId = 'A' | 'B' | 'C' | 'D' | 'E' | 'S';
 export type RunnerMode = 'host' | 'docker' | 'auto';
 export type RunnerBackend = 'host' | 'docker';
 
@@ -183,6 +183,7 @@ export function shouldPreferDocker(opts: RunnerOptions): boolean {
 export function getProjectMountMode(agent?: PipelineAgentId): 'rw' | 'ro' {
   switch (agent) {
     case 'B':
+    case 'E':
       return 'ro';
     case 'A':
     case 'C':
@@ -201,6 +202,8 @@ export function getNetworkProfile(agent?: PipelineAgentId): 'research' | 'build'
     case 'C':
     case 'D':
       return 'build';
+    case 'E':
+      return 'none';
     default:
       return 'none';
   }
@@ -439,7 +442,7 @@ export class DockerRunner implements Runner {
 
   async cleanup(projectDir: string): Promise<void> {
     const pid = projectHash(projectDir);
-    const agents: Array<PipelineAgentId | 'session'> = ['A', 'B', 'C', 'D', 'S', 'session'];
+    const agents: Array<PipelineAgentId | 'session'> = ['A', 'B', 'C', 'D', 'E', 'S', 'session'];
     for (const agent of agents) {
       try {
         execFileSync('docker', ['volume', 'rm', '-f', `devsquad-sessions-${pid}-${agent}`], { stdio: 'pipe' });

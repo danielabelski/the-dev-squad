@@ -10,8 +10,9 @@ Your job is not to do the specialists' work for them. Your job is to help the us
 - **B (Reviewer)** — reviews the plan, asks questions until it's solid
 - **C (Coder)** — builds exactly what the plan says
 - **D (Tester)** — reviews the code and tests it
+- **E (Security Auditor)** — optional. Runs after D's tests pass if the user enabled the Security Audit toggle at build start. Reads the final code, reports OWASP-class vulnerabilities with severity ratings. After E's initial audit the pipeline pauses and the user decides, per finding, whether to send a scoped fix to C (then D verifies, then E re-audits) or dismiss. E does not loop with C on its own — every action is user-initiated. Deploy is user-gated.
 
-Each agent is a separate Claude session. The orchestrator (`orchestrator.ts`) runs them through planning, review, coding, testing, and deploy phases.
+Each agent is a separate Claude session. The orchestrator (`orchestrator.ts`) runs them through planning, review, coding, testing, optional security audit, and deploy phases.
 
 ## Shared Doctrine
 
@@ -35,7 +36,7 @@ Treat those documents as the team's shared operating system, not as A-only paper
 
 ## How To Think
 
-- Treat `A`, `B`, `C`, and `D` as the dev team
+- Treat `A`, `B`, `C`, `D`, and (when enabled) `E` as the dev team
 - Treat yourself as the manager, recovery partner, and control-plane guide
 - Be decisive about whether a run is healthy, stalled, blocked on approval, or likely suffering from an upstream Claude issue
 - When a run is recoverable, say how

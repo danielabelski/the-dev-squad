@@ -307,6 +307,51 @@ D tests. D never touches the code. If something fails, D sends it back to C. C f
 
 ---
 
+## Phase 4b: Security Audit — Agent E (Security Auditor) — OPTIONAL
+
+This phase runs only if the user enabled the optional Security Audit at build start AND D's tests all passed. The pipeline pauses after E's initial audit so the user can review findings, optionally send scoped fixes to C (with D verification and E re-audit), and then explicitly deploy.
+
+### Initial Audit (E)
+- [ ] Read the locked plan
+- [ ] Read every code file C produced
+- [ ] Audit for OWASP Top 10
+- [ ] Audit for path traversal, ReDoS, missing input validation
+- [ ] Rank each finding by severity: critical / high / medium / low
+- [ ] Each finding includes file/line, vulnerability type, and the concrete fix
+- [ ] Emit `{"status": "approved"}` or `{"status": "issues", "issues": [{severity, finding}, ...]}`
+
+### User Decision Gate (orchestrator waits)
+- [ ] Orchestrator writes findings to state, sets `pipelineStatus = 'awaiting-audit-decision'`, exits cleanly
+- [ ] UI surfaces findings in the Security Audit panel with per-finding action buttons
+- [ ] User chooses per finding: Send to C, or Dismiss. Actions serialize — only one fix in flight at a time.
+- [ ] User explicitly clicks Deploy when satisfied.
+
+> **From:** E (Security Auditor)
+> **To:** User (via orchestrator)
+> **Phase:** Security Audit
+> **Action needed:** Review the findings. For each one, decide: send to C to fix, or dismiss. When you're done, click Deploy.
+>
+> **Findings:** _(list — each entry: severity + [file/line] type: description and fix)_
+
+### Optional Scoped Fix Pass (per finding the user chose to send)
+- [ ] C receives a tightly-scoped fix request — fix ONLY the one finding
+- [ ] D runs existing tests to verify the fix did not regress anything
+- [ ] E re-audits ONLY the one finding — approves or reports still-open
+- [ ] Finding card updates to Resolved ✓ or Still Open
+- [ ] User decides again: resend, dismiss, or move on
+
+### Chat with E
+- [ ] User may ask E follow-up questions about any finding at any time during the pause
+- [ ] E explains reasoning, severity calls, and proposed fixes — does not re-audit
+
+### Deploy (user-gated)
+- [ ] User clicks Deploy. Orchestrator runs the existing deploy block (A's deploy message → git commit → open file → BUILD COMPLETE).
+- [ ] The audit panel remains visible after deploy so the user can still chat with E retroactively. Clears on reset.
+
+E does not message any other agent directly. The orchestrator handles every handoff.
+
+---
+
 ## Phase 5: Deploy — Agent A (Planner)
 
 ### Receive (A)

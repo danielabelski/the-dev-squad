@@ -35,6 +35,7 @@ const ROLE_FILES: Record<string, string> = {
   B: join(BUILDUI_DIR, 'role-b.md'),
   C: join(BUILDUI_DIR, 'role-c.md'),
   D: join(BUILDUI_DIR, 'role-d.md'),
+  E: join(BUILDUI_DIR, 'role-e.md'),
   S: join(BUILDUI_DIR, 'role-s.md'),
 };
 
@@ -43,6 +44,7 @@ const MANUAL_PROMPTS: Record<string, string> = {
   B: 'You specialize in code review and finding gaps.',
   C: 'You specialize in writing code.',
   D: 'You specialize in testing and debugging.',
+  E: 'You specialize in static security analysis.',
   S: 'You help oversee and diagnose issues.',
 };
 
@@ -58,6 +60,8 @@ function roleLabel(agent: string): string {
       return 'coder';
     case 'D':
       return 'tester';
+    case 'E':
+      return 'security auditor';
     case 'S':
     default:
       return 'supervisor';
@@ -76,7 +80,7 @@ function getManualState(): Record<string, unknown> {
     currentPhase: 'concept',
     securityMode: 'fast',
     activeAgent: '',
-    agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', S: 'idle' },
+    agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' },
     sessions: {},
     buildComplete: false,
     usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: 0 },
@@ -99,7 +103,7 @@ function getStagingState(): Record<string, unknown> {
     currentPhase: 'concept',
     securityMode: 'fast',
     activeAgent: '',
-    agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', S: 'idle' },
+    agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' },
     sessions: {},
     buildComplete: false,
     usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: 0 },
@@ -375,7 +379,7 @@ function handleManual(agent: string, message: string, model: string) {
 function handlePipeline(
   agent: string,
   message: string,
-  defaults?: { securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal }
+  defaults?: { securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean }
 ) {
   let projectDir: string;
   let eventsFile: string;
@@ -435,10 +439,12 @@ function handlePipeline(
         const effectiveSecurityMode = defaults?.securityMode || (controlState.securityMode === 'strict' ? 'strict' : 'fast');
         const effectiveRunGoal = defaults?.runGoal || 'full-build';
         const effectivePermissionMode = defaults?.permissionMode || 'auto';
+        const effectiveRunFinalAudit = defaults?.runFinalAudit === true || controlState.runFinalAudit === true;
         const result = startPipelineRun({
           securityMode: effectiveSecurityMode,
           permissionMode: effectivePermissionMode as 'auto' | 'plan' | 'dangerously-skip-permissions',
           runGoal: effectiveRunGoal,
+          runFinalAudit: effectiveRunFinalAudit,
         });
 
         if (!result.success) {
@@ -632,7 +638,7 @@ function handlePipeline(
 // ── Route handler ───────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const { agent, message, mode, model, securityMode, permissionMode, runGoal } = await req.json();
+  const { agent, message, mode, model, securityMode, permissionMode, runGoal, runFinalAudit } = await req.json();
 
   if (mode === 'manual') {
     return handleManual(agent, message, model || 'claude-sonnet-4-6');
@@ -641,5 +647,6 @@ export async function POST(req: NextRequest) {
     securityMode: securityMode === 'strict' ? 'strict' : 'fast',
     permissionMode: permissionMode === 'plan' ? 'plan' : permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions' : 'auto',
     runGoal: runGoal === 'plan-only' ? 'plan-only' : 'full-build',
+    runFinalAudit: runFinalAudit === true,
   });
 }

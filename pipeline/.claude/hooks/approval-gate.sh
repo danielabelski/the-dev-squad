@@ -15,6 +15,7 @@
 # AGENT B (Reviewer):   Cannot write anything. No Bash. No Agent tool.
 # AGENT C (Coder):      Can write in current project except plan.md and .claude/. No Agent tool.
 # AGENT D (Tester):     Cannot write anything. No Agent tool.
+# AGENT E (Sec. Audit): Cannot write anything. No Bash. No Agent tool. No WebFetch/WebSearch. Read-only static analysis.
 #
 # ALL: Write/Edit outside ~/Builds/ or the active pipeline project root blocked.
 # .claude/ paths blocked for all agents.
@@ -56,7 +57,7 @@ fi
 
 # ── Reject unknown agent identity ────────────────────────────────────
 
-if [[ ! "$AGENT" =~ ^[ABCDS]$ ]]; then
+if [[ ! "$AGENT" =~ ^[ABCDES]$ ]]; then
   echo "BLOCKED: Unknown agent identity '$AGENT'" >&2
   exit 2
 fi
@@ -233,6 +234,10 @@ case "$TOOL_NAME" in
         echo "BLOCKED: Agent D cannot write files" >&2
         exit 2
         ;;
+      E)
+        echo "BLOCKED: Agent E cannot write files" >&2
+        exit 2
+        ;;
     esac
 
     echo '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}}'
@@ -250,6 +255,10 @@ if [ "$TOOL_NAME" = "Bash" ]; then
       ;;
     B)
       echo "BLOCKED: Agent B cannot run commands" >&2
+      exit 2
+      ;;
+    E)
+      echo "BLOCKED: Agent E cannot run commands" >&2
       exit 2
       ;;
   esac

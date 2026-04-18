@@ -63,15 +63,17 @@ const ROLE_A = join(BUILDUI_DIR, 'role-a.md');
 const ROLE_B = join(BUILDUI_DIR, 'role-b.md');
 const ROLE_C = join(BUILDUI_DIR, 'role-c.md');
 const ROLE_D = join(BUILDUI_DIR, 'role-d.md');
+const ROLE_E = join(BUILDUI_DIR, 'role-e.md');
 
 const MODEL = 'claude-opus-4-6';
 
-// Effort levels per agent — quality gates (B, D) get max reasoning depth
+// Effort levels per agent — quality gates (B, D, E) get max reasoning depth
 const AGENT_EFFORT: Record<string, string> = {
   A: 'high',   // Planner — follows template, high is enough
   B: 'max',    // Reviewer — must find gaps, deep reasoning pays off
   C: 'high',   // Coder — executing approved plan
   D: 'max',    // Tester — must catch bugs, verify correctness
+  E: 'max',    // Security Auditor — must catch real vulnerabilities, deep reasoning required
   S: 'high',   // Supervisor — not currently used
 };
 
@@ -104,7 +106,10 @@ if (projectDirIdx !== -1) {
     if (!existingASession) existingASession = existing.sessions?.A || '';
     if (existing.securityMode === 'strict') securityMode = 'strict';
     // Only treat as a resume if the state has an explicit resume action
-    resumingExistingProject = existing.resumeAction === 'continue-approved-plan' || existing.resumeAction === 'resume-stalled-turn';
+    resumingExistingProject =
+      existing.resumeAction === 'continue-approved-plan' ||
+      existing.resumeAction === 'resume-stalled-turn' ||
+      (typeof existing.resumeAction === 'string' && existing.resumeAction.startsWith('audit-'));
   } catch {
     concept = 'Build from viewer';
   }
@@ -163,7 +168,7 @@ if (!existsSync(join(projectDir, '.git'))) {
 
 interface PipelineEvent {
   time: string;
-  agent: 'A' | 'B' | 'C' | 'D' | 'S' | 'system';
+  agent: 'A' | 'B' | 'C' | 'D' | 'E' | 'S' | 'system';
   phase: string;
   type: string;
   text: string;
@@ -178,15 +183,34 @@ interface TokenUsage {
   totalCostUsd: number;
 }
 
+type AuditFindingStatus = 'open' | 'sent-to-c' | 're-auditing' | 'resolved' | 'still-open' | 'dismissed';
+
+interface AuditFindingHistoryEntry {
+  time: string;
+  action: 'created' | 'sent-to-c' | 'fix-applied' | 'fix-failed-tests' | 're-audit-passed' | 're-audit-failed' | 'dismissed';
+  note?: string;
+}
+
+interface AuditFinding {
+  id: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  text: string;
+  status: AuditFindingStatus;
+  createdAt: string;
+  history: AuditFindingHistoryEntry[];
+}
+
 interface PipelineState {
   concept: string;
   projectDir: string;
   currentPhase: string;
   securityMode: 'fast' | 'strict';
   runGoal: 'full-build' | 'plan-only';
+  runFinalAudit: boolean;
   stopAfterPhase: 'none' | 'plan-review';
-  pipelineStatus: 'idle' | 'running' | 'paused' | 'complete' | 'failed';
-  resumeAction?: 'none' | 'continue-approved-plan' | 'resume-stalled-turn';
+  pipelineStatus: 'idle' | 'running' | 'paused' | 'awaiting-audit-decision' | 'complete' | 'failed';
+  resumeAction?: 'none' | 'continue-approved-plan' | 'resume-stalled-turn' | 'audit-send-to-c' | 'audit-dismiss' | 'audit-deploy';
+  resumeActionTarget?: string;
   activeAgent: string;
   agentStatus: Record<string, string>;
   sessions: Record<string, string>;
@@ -194,6 +218,9 @@ interface PipelineState {
   usage: TokenUsage;
   runtime: PipelineRuntimeState;
   events: PipelineEvent[];
+  auditFindings?: AuditFinding[];
+  auditDeployPending?: boolean;
+  auditActionInFlight?: boolean;
 }
 
 const eventsFile = join(projectDir, 'pipeline-events.json');
@@ -208,16 +235,21 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     currentPhase: existing.currentPhase || 'concept',
     securityMode: existing.securityMode === 'strict' ? 'strict' : securityMode,
     runGoal: existing.runGoal === 'plan-only' ? 'plan-only' : 'full-build',
+    runFinalAudit: existing.runFinalAudit === true,
     stopAfterPhase: existing.stopAfterPhase === 'plan-review' ? 'plan-review' : 'none',
     pipelineStatus: existing.pipelineStatus || (existing.buildComplete ? 'complete' : 'idle'),
-    resumeAction: existing.resumeAction === 'continue-approved-plan' || existing.resumeAction === 'resume-stalled-turn' ? existing.resumeAction : 'none',
+    resumeAction: (['continue-approved-plan', 'resume-stalled-turn', 'audit-send-to-c', 'audit-dismiss', 'audit-deploy'].includes(existing.resumeAction) ? existing.resumeAction : 'none'),
+    resumeActionTarget: typeof existing.resumeActionTarget === 'string' ? existing.resumeActionTarget : undefined,
     activeAgent: existing.activeAgent || '',
-    agentStatus: existing.agentStatus || { A: 'idle', B: 'idle', C: 'idle', D: 'idle', S: 'idle' },
+    agentStatus: existing.agentStatus || { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' },
     sessions: existing.sessions || {},
     buildComplete: !!existing.buildComplete,
     usage: existing.usage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: 0 },
     runtime: existing.runtime || { ...EMPTY_RUNTIME },
     events: existing.events || [],
+    auditFindings: Array.isArray(existing.auditFindings) ? existing.auditFindings : [],
+    auditDeployPending: existing.auditDeployPending === true,
+    auditActionInFlight: existing.auditActionInFlight === true,
   };
 } else {
   // Fresh start — but preserve any existing events (concept-phase conversation)
@@ -226,6 +258,7 @@ if (resumingExistingProject && existsSync(eventsFile)) {
   let existingUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: 0 };
   let existingRunGoal = 'full-build';
   let existingStopAfterPhase = 'none';
+  let existingRunFinalAudit = false;
   if (existsSync(eventsFile)) {
     try {
       const existing = JSON.parse(readFileSync(eventsFile, 'utf8'));
@@ -234,6 +267,7 @@ if (resumingExistingProject && existsSync(eventsFile)) {
       existingUsage = existing.usage || existingUsage;
       existingRunGoal = existing.runGoal || existingRunGoal;
       existingStopAfterPhase = existing.stopAfterPhase || existingStopAfterPhase;
+      existingRunFinalAudit = existing.runFinalAudit === true;
       if (existing.securityMode === 'strict') securityMode = 'strict';
     } catch {}
   }
@@ -243,16 +277,21 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     currentPhase: 'concept',
     securityMode,
     runGoal: existingRunGoal === 'plan-only' ? 'plan-only' : 'full-build',
+    runFinalAudit: existingRunFinalAudit,
     stopAfterPhase: existingStopAfterPhase === 'plan-review' ? 'plan-review' : 'none',
     pipelineStatus: 'idle',
     resumeAction: 'none',
+    resumeActionTarget: undefined,
     activeAgent: '',
-    agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', S: 'idle' },
+    agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' },
     sessions: existingSessions,
     buildComplete: false,
     usage: existingUsage,
     runtime: { ...EMPTY_RUNTIME },
     events: existingEvents,
+    auditFindings: [],
+    auditDeployPending: false,
+    auditActionInFlight: false,
   };
 }
 
@@ -368,10 +407,11 @@ function clearActiveTurn(agent: AgentId) {
 //   - C: can write in ~/Builds/ except plan.md
 //   - D: can't write anything
 //   - Nobody writes outside ~/Builds/
-//   - Agent tool blocked for A/B/C/D
+//   - Agent tool blocked for A/B/C/D/E
+//   - E (Security Auditor): read-only — no Write, no Edit, no Bash, no Web
 //
 
-type AgentId = 'A' | 'B' | 'C' | 'D';
+type AgentId = 'A' | 'B' | 'C' | 'D' | 'E';
 
 // ── Streaming Claude Runner ─────────────────────────────────────────
 
@@ -391,6 +431,8 @@ function agentRoleLabel(agent: AgentId): string {
       return 'coder';
     case 'D':
       return 'tester';
+    case 'E':
+      return 'security auditor';
   }
 }
 
@@ -880,6 +922,25 @@ const TEST_SCHEMA = {
   required: ['status'],
 };
 
+const AUDIT_SCHEMA = {
+  type: 'object',
+  properties: {
+    status: { type: 'string', enum: ['approved', 'issues'] },
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+          finding: { type: 'string' },
+        },
+        required: ['severity', 'finding'],
+      },
+    },
+  },
+  required: ['status'],
+};
+
 // ── Helper ──────────────────────────────────────────────────────────
 
 function parseSignal(result: string): Record<string, unknown> {
@@ -1181,6 +1242,308 @@ async function runPlanReviewPhase(
   return { aSession, bSession, reviewRound, paused: false };
 }
 
+async function runSecurityAudit(): Promise<{ paused: boolean }> {
+  if (!state.runFinalAudit) return { paused: false };
+
+  setPhase('security-audit');
+  setPipelineStatus('running');
+  setAgent('E', 'active');
+  emit('D', 'security-audit', 'send', 'Sent reviewed and tested code to E for security audit');
+  emit('E', 'security-audit', 'receive', 'Received reviewed and tested code from D');
+  emit('E', 'security-audit', 'status', 'Auditing for OWASP Top 10, path traversal, ReDoS, missing input validation...');
+  emitSupervisor(
+    'security-audit',
+    'Tests passed. The security auditor is doing a final static pass before we hand the build back to you for review.'
+  );
+
+  const auditPrompt = [
+    `Read the locked plan at ${join(projectDir, 'plan.md')}.`,
+    `Then enumerate and read every code file in ${projectDir} that C produced.`,
+    'Audit statically for the OWASP Top 10, path traversal, ReDoS, and missing input validation on public boundaries.',
+    'Only flag real, exploitable vulnerabilities you can point to with a file and line.',
+    'Rank each finding by severity: critical / high / medium / low. Calibrate by exploitability and prerequisites, not by general code quality.',
+    '',
+    'Respond with ONLY a JSON object: {"status": "approved"} or {"status": "issues", "issues": [{"severity": "...", "finding": "[file/line] type: description and fix"}]}',
+  ].join('\n');
+
+  const auditResult = await claude('E', auditPrompt, {
+    role: ROLE_E,
+    jsonSchema: AUDIT_SCHEMA,
+  });
+  saveSession('E', auditResult.sessionId);
+
+  const signal = auditResult.structured || parseSignal(auditResult.result);
+  const findings: AuditFinding[] = [];
+
+  if (!isPositiveSignal(signal)) {
+    const rawIssues = Array.isArray(signal.issues) ? signal.issues : [];
+    const validSeverities: AuditFinding['severity'][] = ['critical', 'high', 'medium', 'low'];
+    const nowIso = new Date().toISOString();
+    for (const raw of rawIssues) {
+      let severity: AuditFinding['severity'] = 'medium';
+      let text = '';
+      if (typeof raw === 'string') {
+        // Defensive: legacy bare-string shape. Default severity to medium.
+        text = raw;
+      } else if (raw && typeof raw === 'object') {
+        const obj = raw as { severity?: unknown; finding?: unknown };
+        if (typeof obj.severity === 'string' && validSeverities.includes(obj.severity as AuditFinding['severity'])) {
+          severity = obj.severity as AuditFinding['severity'];
+        }
+        if (typeof obj.finding === 'string') {
+          text = obj.finding;
+        }
+      }
+      if (!text) continue;
+      findings.push({
+        id: `finding-${randomUUID().slice(0, 8)}`,
+        severity,
+        text,
+        status: 'open',
+        createdAt: nowIso,
+        history: [{ time: nowIso, action: 'created' }],
+      });
+    }
+  }
+
+  state.auditFindings = findings;
+  state.auditDeployPending = true;
+  setPipelineStatus('awaiting-audit-decision');
+  setAgent('E', 'done');
+
+  if (findings.length === 0) {
+    emit('E', 'security-audit', 'approval', 'AUDIT CLEAN — no findings');
+    emitSupervisor(
+      'security-audit',
+      'Audit is clean — no exploitable vulnerabilities found. Click Deploy in the Security Audit panel when you are ready to finish the build.'
+    );
+  } else {
+    findings.forEach((f) => {
+      emit('E', 'security-audit', 'issue', `[${f.severity}] ${f.text}`);
+    });
+    const counts = findings.reduce((acc, f) => {
+      acc[f.severity] = (acc[f.severity] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const summaryParts = (['critical', 'high', 'medium', 'low'] as const)
+      .filter((s) => counts[s])
+      .map((s) => `${counts[s]} ${s}`);
+    emitSupervisor(
+      'security-audit',
+      `Audit found ${findings.length} finding${findings.length === 1 ? '' : 's'} (${summaryParts.join(', ')}). Waiting on your review — decide per finding in the Security Audit panel, then click Deploy.`
+    );
+  }
+
+  flush();
+  return { paused: true };
+}
+
+async function runDeployStep(aSession: string): Promise<string> {
+  setPhase('deploy');
+  setAgent('A', 'active');
+  emit('D', 'deploy', 'send', 'Sent reviewed + tested code to A');
+  emit('A', 'deploy', 'receive', 'Received final code from D');
+  emit('A', 'deploy', 'status', 'Deploying...');
+
+  const aDeployResult = await claude('A', [
+    'The code has been reviewed and tested by Agent D. Everything passed.',
+    'Do not use Bash or git. The orchestrator will handle any final commit.',
+    'Confirm the build is complete and mention any environment caveats the user should know.',
+  ].join('\n'), { role: ROLE_A, resume: aSession });
+  aSession = aDeployResult.sessionId;
+  saveSession('A', aSession);
+
+  setAgent('A', 'done');
+  setPhase('complete');
+  setPipelineStatus('complete');
+  state.buildComplete = true;
+  emit('A', 'deploy', 'approval', 'BUILD COMPLETE');
+  emitSupervisor('complete', 'The team finished the build. You can inspect the output now or jump into any specialist chat for follow-up work.');
+
+  try {
+    execFileSync('git', ['add', '.'], { cwd: projectDir });
+    execFileSync('git', ['commit', '-m', `Build complete: ${concept.slice(0, 50)}`], { cwd: projectDir });
+    emit('system', 'complete', 'status', 'Code committed to git');
+  } catch {}
+
+  try {
+    const files = readdirSync(projectDir);
+    const htmlFile = files.find((file) => file === 'index.html') || files.find((file) => file.endsWith('.html'));
+    if (htmlFile) {
+      execFileSync('open', [join(projectDir, htmlFile)]);
+      emit('system', 'complete', 'status', `Opened ${htmlFile}`);
+    }
+  } catch {}
+
+  return aSession;
+}
+
+// ── Audit action handlers (user-initiated fix/dismiss/deploy after audit pause) ──
+
+async function runAuditFixPass(findingId: string): Promise<void> {
+  const findings = state.auditFindings || [];
+  const finding = findings.find((f) => f.id === findingId);
+  if (!finding) {
+    emit('system', 'security-audit', 'issue', `Requested fix for unknown finding ${findingId} — ignored.`);
+    return;
+  }
+  if (finding.status === 'resolved' || finding.status === 'dismissed') {
+    emit('system', 'security-audit', 'status', `Finding ${findingId} already ${finding.status} — skipping fix.`);
+    return;
+  }
+
+  const nowIso = () => new Date().toISOString();
+
+  finding.status = 'sent-to-c';
+  finding.history.push({ time: nowIso(), action: 'sent-to-c' });
+  setPhase('security-audit');
+  setAgent('C', 'active');
+  emit('E', 'security-audit', 'send', `Finding ${finding.id} sent to C for a scoped fix: ${finding.text}`);
+  emitSupervisor('security-audit', `C is applying a scoped fix for finding ${finding.id} (${finding.severity}).`);
+  flush();
+
+  const cSession = state.sessions?.C;
+  const cPrompt = [
+    'Agent E flagged a security finding that the user asked you to fix.',
+    'Fix ONLY this finding. Do not touch anything else. Do not modify plan.md.',
+    'The rest of the codebase has passed review and testing — keep it that way.',
+    '',
+    `Finding: ${finding.text}`,
+    '',
+    'When you are done, confirm what you changed in one sentence.',
+  ].join('\n');
+  const cResult = await claude('C', cPrompt, { role: ROLE_C, resume: cSession });
+  saveSession('C', cResult.sessionId);
+  finding.history.push({ time: nowIso(), action: 'fix-applied' });
+  emit('C', 'security-audit', 'fix', `Applied scoped fix for ${finding.id}`);
+  setAgent('C', 'done');
+  flush();
+
+  setAgent('D', 'active');
+  const dSession = state.sessions?.D;
+  const dPrompt = [
+    `Agent C applied a scoped security fix for this finding: "${finding.text}"`,
+    'Run the existing tests. Confirm nothing regressed.',
+    '',
+    'Respond with ONLY: {"status": "passed"} or {"status": "failed", "failures": ["..."]}',
+  ].join('\n');
+  const dResult = await claude('D', dPrompt, { role: ROLE_D, resume: dSession, jsonSchema: TEST_SCHEMA });
+  saveSession('D', dResult.sessionId);
+  const dSignal = dResult.structured || parseSignal(dResult.result);
+  setAgent('D', 'done');
+
+  if (!isPositiveSignal(dSignal)) {
+    const failures = Array.isArray(dSignal.failures) ? (dSignal.failures as string[]) : [];
+    const failureNote = failures.length ? failures.join(' | ') : 'Tests failed without structured failure details.';
+    finding.status = 'open';
+    finding.history.push({ time: nowIso(), action: 'fix-failed-tests', note: failureNote });
+    emit('D', 'security-audit', 'failure', `Fix for ${finding.id} broke tests: ${failureNote}`);
+    emitSupervisor('security-audit', `C's fix for ${finding.id} broke tests. The finding is back to Open — decide whether to retry, dismiss, or ignore.`);
+    flush();
+    return;
+  }
+
+  finding.status = 're-auditing';
+  setAgent('E', 'active');
+  emit('D', 'security-audit', 'send', `Fix for ${finding.id} passed tests. Sending to E for re-audit.`);
+  flush();
+
+  const eSession = state.sessions?.E;
+  const ePrompt = [
+    'Re-audit ONLY this finding after a scoped fix was applied.',
+    `Original finding: ${finding.text}`,
+    'Read only the file(s) this finding referenced. Confirm whether the vulnerability is closed.',
+    '',
+    'Respond with ONLY the same JSON schema: {"status": "approved"} or {"status": "issues", "issues": [{"severity": "...", "finding": "[file/line] type: description and fix"}]}',
+  ].join('\n');
+  const eResult = await claude('E', ePrompt, { role: ROLE_E, resume: eSession, jsonSchema: AUDIT_SCHEMA });
+  saveSession('E', eResult.sessionId);
+  const eSignal = eResult.structured || parseSignal(eResult.result);
+  setAgent('E', 'done');
+
+  if (isPositiveSignal(eSignal)) {
+    finding.status = 'resolved';
+    finding.history.push({ time: nowIso(), action: 're-audit-passed' });
+    emit('E', 'security-audit', 'approval', `Finding ${finding.id} resolved ✓`);
+    emitSupervisor('security-audit', `Finding ${finding.id} is resolved. Back to your review.`);
+  } else {
+    const rawIssues = Array.isArray(eSignal.issues) ? eSignal.issues : [];
+    const firstIssue = rawIssues[0];
+    let newText = finding.text;
+    if (firstIssue) {
+      if (typeof firstIssue === 'string') {
+        newText = firstIssue;
+      } else if (typeof firstIssue === 'object' && typeof (firstIssue as { finding?: unknown }).finding === 'string') {
+        newText = (firstIssue as { finding: string }).finding;
+      }
+    }
+    finding.status = 'still-open';
+    finding.text = newText;
+    finding.history.push({ time: nowIso(), action: 're-audit-failed', note: newText });
+    emit('E', 'security-audit', 'issue', `Finding ${finding.id} still open: ${newText}`);
+    emitSupervisor('security-audit', `Finding ${finding.id} is still open after C's fix. Decide whether to retry, dismiss, or ignore.`);
+  }
+  flush();
+}
+
+function dismissAuditFinding(findingId: string): void {
+  const finding = (state.auditFindings || []).find((f) => f.id === findingId);
+  if (!finding) {
+    emit('system', 'security-audit', 'issue', `Requested dismiss for unknown finding ${findingId} — ignored.`);
+    return;
+  }
+  finding.status = 'dismissed';
+  finding.history.push({ time: new Date().toISOString(), action: 'dismissed' });
+  emit('system', 'security-audit', 'dismissal', `User dismissed finding ${finding.id} (${finding.severity}): ${finding.text}`);
+  emitSupervisor('security-audit', `Finding ${finding.id} dismissed.`);
+  flush();
+}
+
+async function runAuditDeploy(): Promise<void> {
+  state.auditDeployPending = false;
+  setPipelineStatus('running');
+  const findings = state.auditFindings || [];
+  const resolved = findings.filter((f) => f.status === 'resolved').length;
+  const dismissed = findings.filter((f) => f.status === 'dismissed').length;
+  const stillOpen = findings.filter((f) =>
+    f.status === 'open' ||
+    f.status === 'still-open' ||
+    f.status === 'sent-to-c' ||
+    f.status === 're-auditing'
+  ).length;
+  emitSupervisor(
+    'security-audit',
+    `Deploying. Findings: ${resolved} resolved, ${dismissed} dismissed, ${stillOpen} still open.`
+  );
+
+  const aSession = state.sessions?.A || '';
+  await runDeployStep(aSession);
+}
+
+async function handleAuditAction(): Promise<void> {
+  const action = state.resumeAction;
+  const targetId = state.resumeActionTarget;
+
+  try {
+    switch (action) {
+      case 'audit-send-to-c':
+        if (targetId) await runAuditFixPass(targetId);
+        break;
+      case 'audit-dismiss':
+        if (targetId) dismissAuditFinding(targetId);
+        break;
+      case 'audit-deploy':
+        await runAuditDeploy();
+        break;
+    }
+  } finally {
+    state.resumeAction = 'none';
+    state.resumeActionTarget = undefined;
+    state.auditActionInFlight = false;
+    flush();
+  }
+}
+
 async function runBuildFromCoding(aSession: string): Promise<{ aSession: string; codeReviewRound: number; testRound: number }> {
   setPhase('coding');
   setPipelineStatus('running');
@@ -1341,41 +1704,14 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
     }
   }
 
-  setPhase('deploy');
-  setAgent('A', 'active');
-  emit('D', 'deploy', 'send', 'Sent reviewed + tested code to A');
-  emit('A', 'deploy', 'receive', 'Received final code from D');
-  emit('A', 'deploy', 'status', 'Deploying...');
+  const auditOutcome = await runSecurityAudit();
+  if (auditOutcome.paused) {
+    // Orchestrator exits here. User actions drive the rest via /api/audit-action
+    // which spawns a fresh orchestrator that routes through handleAuditAction().
+    return { aSession, codeReviewRound, testRound };
+  }
 
-  const aDeployResult = await claude('A', [
-    'The code has been reviewed and tested by Agent D. Everything passed.',
-    'Do not use Bash or git. The orchestrator will handle any final commit.',
-    'Confirm the build is complete and mention any environment caveats the user should know.',
-  ].join('\n'), { role: ROLE_A, resume: aSession });
-  aSession = aDeployResult.sessionId;
-  saveSession('A', aSession);
-
-  setAgent('A', 'done');
-  setPhase('complete');
-  setPipelineStatus('complete');
-  state.buildComplete = true;
-  emit('A', 'deploy', 'approval', 'BUILD COMPLETE');
-  emitSupervisor('complete', 'The team finished the build. You can inspect the output now or jump into any specialist chat for follow-up work.');
-
-  try {
-    execFileSync('git', ['add', '.'], { cwd: projectDir });
-    execFileSync('git', ['commit', '-m', `Build complete: ${concept.slice(0, 50)}`], { cwd: projectDir });
-    emit('system', 'complete', 'status', 'Code committed to git');
-  } catch {}
-
-  try {
-    const files = readdirSync(projectDir);
-    const htmlFile = files.find((file) => file === 'index.html') || files.find((file) => file.endsWith('.html'));
-    if (htmlFile) {
-      execFileSync('open', [join(projectDir, htmlFile)]);
-      emit('system', 'complete', 'status', `Opened ${htmlFile}`);
-    }
-  } catch {}
+  aSession = await runDeployStep(aSession);
 
   return { aSession, codeReviewRound, testRound };
 }
@@ -1389,6 +1725,12 @@ async function run() {
   console.log('║     PIPELINE BUILD ORCHESTRATOR (LIVE)     ║');
   console.log('╚══════════════════════════════════════════╝\x1b[0m');
   console.log(`\n  Concept:  ${concept}`);
+
+  if (typeof state.resumeAction === 'string' && state.resumeAction.startsWith('audit-')) {
+    console.log(`  Audit action: ${state.resumeAction}${state.resumeActionTarget ? ` (${state.resumeActionTarget})` : ''}\n`);
+    await handleAuditAction();
+    return;
+  }
   console.log(`  Project:  ${projectDir}`);
   console.log(`  Viewer:   http://localhost:3456\n`);
 

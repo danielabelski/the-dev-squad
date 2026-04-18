@@ -6,29 +6,33 @@ import { Badge } from '@/components/shared/Badge';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import { MarkdownText } from '@/components/shared/MarkdownText';
 import { LunarOfficeScene } from '@/components/mission/LunarOfficeScene';
+import { SecurityAuditPanel } from '@/components/agents/SecurityAuditPanel';
 import { canAutoResumeTurn } from '@/lib/pipeline-runtime';
 import { getExecutionPathStatus, getSupervisorRecommendation, getSupervisorUpdate } from '@/lib/pipeline-supervisor';
 import { usePipelineState, type AgentId, type AppMode, type PendingApproval, type PermissionMode, type RunGoal, type SecurityMode } from '@/lib/use-pipeline';
 
 const AGENT_NAMES: Record<AgentId, string> = {
-  A: 'Planner', B: 'Reviewer', C: 'Coder', D: 'Tester', S: 'Supervisor',
+  A: 'Planner', B: 'Reviewer', C: 'Coder', D: 'Tester', E: 'Security Auditor', S: 'Supervisor',
 };
 
 const PHASE_LABELS: Record<string, string> = {
   concept: 'Concept', planning: 'Planning', 'plan-review': 'Plan Review',
   coding: 'Coding', 'code-review': 'Code Review', testing: 'Testing',
+  'security-audit': 'Security Audit',
   deploy: 'Deploy', complete: 'Complete',
 };
 
 const PHASE_VARIANTS: Record<string, 'purple' | 'success' | 'warning' | 'danger' | 'neutral'> = {
   concept: 'neutral', planning: 'purple', 'plan-review': 'purple',
   coding: 'warning', 'code-review': 'warning', testing: 'danger',
+  'security-audit': 'danger',
   deploy: 'success', complete: 'success',
 };
 
 const PHASE_PROGRESS: Record<string, number> = {
   concept: 5, planning: 20, 'plan-review': 35,
   coding: 55, 'code-review': 70, testing: 85,
+  'security-audit': 90,
   deploy: 95, complete: 100,
 };
 
@@ -42,6 +46,7 @@ const MANUAL_ROLES: Record<string, string> = {
   B: 'Code review & finding gaps',
   C: 'Writing code',
   D: 'Testing & debugging',
+  E: 'Static security analysis',
   S: 'Oversight & diagnostics',
 };
 
@@ -51,9 +56,11 @@ export default function PipelinePage() {
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>('auto');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
+  const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
 
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
+    sendFindingToC, dismissFinding, deployAfterAudit,
   } = usePipelineState({ pollInterval: 400, mode, model: selectedModel });
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
@@ -156,6 +163,7 @@ export default function PipelinePage() {
       securityMode: selectedSecurityMode,
       permissionMode: selectedPermissionMode,
       runGoal: selectedRunGoal,
+      runFinalAudit: selectedRunFinalAudit,
     } : undefined);
     setChatInput('');
     setSendingAgents(prev => { const n = new Set(prev); n.delete('S'); return n; });
@@ -164,7 +172,7 @@ export default function PipelinePage() {
   async function handleStartPipeline() {
     completionNotifiedRef.current = false;
     setPipelineStarted(true);
-    const res = await startPipeline(selectedSecurityMode, selectedRunGoal, selectedPermissionMode);
+    const res = await startPipeline(selectedSecurityMode, selectedRunGoal, selectedPermissionMode, selectedRunFinalAudit);
     if (!res?.success) {
       setPipelineStarted(false);
       console.error('Pipeline failed to start:', res?.error || 'Unknown error');
@@ -213,6 +221,7 @@ export default function PipelinePage() {
       securityMode: selectedSecurityMode,
       permissionMode: selectedPermissionMode,
       runGoal: selectedRunGoal,
+      runFinalAudit: selectedRunFinalAudit,
     } : undefined);
     setPanelInputs(prev => ({ ...prev, [id]: '' }));
     setSendingAgents(prev => { const n = new Set(prev); n.delete(id); return n; });
@@ -227,6 +236,7 @@ export default function PipelinePage() {
       securityMode: selectedSecurityMode,
       permissionMode: selectedPermissionMode,
       runGoal: selectedRunGoal,
+      runFinalAudit: selectedRunFinalAudit,
     } : undefined);
     setChatInput('');
     setSendingAgents(prev => { const n = new Set(prev); n.delete(expandedAgent!); return n; });
@@ -243,6 +253,7 @@ export default function PipelinePage() {
       securityMode: selectedSecurityMode,
       permissionMode: selectedPermissionMode,
       runGoal: selectedRunGoal,
+      runFinalAudit: selectedRunFinalAudit,
     } : undefined);
     setSendingAgents(prev => { const n = new Set(prev); n.delete(toAgent); return n; });
   }
@@ -252,6 +263,15 @@ export default function PipelinePage() {
   const securityModeLocked = isPipeline && (pipelineStarted || pipelineRunning || !!state.projectDir);
   const activeSecurityMode = state.projectDir ? (state.securityMode || 'fast') : selectedSecurityMode;
   const activeRunGoal = state.projectDir ? (state.runGoal || 'full-build') : selectedRunGoal;
+  const activeRunFinalAudit = state.projectDir ? !!state.runFinalAudit : selectedRunFinalAudit;
+
+  const auditHasStarted = !!(
+    activeRunFinalAudit && (
+      state.currentPhase === 'security-audit' ||
+      state.pipelineStatus === 'awaiting-audit-decision' ||
+      (state.auditFindings && state.auditFindings.length > 0)
+    )
+  );
 
   // Derived stats
   const firstEventTime = state.events.length > 0 ? new Date(state.events[0].time).getTime() : 0;
@@ -320,7 +340,7 @@ export default function PipelinePage() {
             <LunarOfficeScene
               activePhase={phase}
               agentStatus={state.agentStatus}
-              latestSpeech={{ A: agentSpeech('A'), B: agentSpeech('B'), C: agentSpeech('C'), D: agentSpeech('D'), S: agentSpeech('S') }}
+              latestSpeech={{ A: agentSpeech('A'), B: agentSpeech('B'), C: agentSpeech('C'), D: agentSpeech('D'), E: null, S: agentSpeech('S') }}
               onAgentClick={(agent) => setSelectedAgent(agent)}
             />
           </div>
@@ -509,6 +529,32 @@ export default function PipelinePage() {
                 </div>
               </div>
             )}
+            {isPipeline && (
+              <div className="mt-3">
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Security Audit</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-lg border border-white/10 bg-white/5">
+                    <button
+                      onClick={() => setSelectedRunFinalAudit(false)}
+                      disabled={securityModeLocked}
+                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${!selectedRunFinalAudit ? 'bg-slate-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
+                      style={{ borderRadius: '7px 0 0 7px' }}
+                    >Off</button>
+                    <button
+                      onClick={() => setSelectedRunFinalAudit(true)}
+                      disabled={securityModeLocked}
+                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedRunFinalAudit ? 'bg-rose-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
+                      style={{ borderRadius: '0 7px 7px 0' }}
+                    >On</button>
+                  </div>
+                  <span className="text-[10px] text-slate-500">
+                    {selectedRunFinalAudit
+                      ? 'After tests pass, E reads everything and reports vulnerabilities. Build still completes.'
+                      : 'Skip the post-test security audit'}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Pipeline-only: Phase + Progress */}
@@ -530,6 +576,9 @@ export default function PipelinePage() {
                 <Badge variant={activeRunGoal === 'plan-only' ? 'purple' : 'neutral'}>
                   {activeRunGoal === 'plan-only' ? 'PLAN ONLY' : 'FULL BUILD'}
                 </Badge>
+                {activeRunFinalAudit && (
+                  <Badge variant="warning">AUDIT ON</Badge>
+                )}
                 {executionPathStatus && (
                   <Badge variant={executionPathStatus.variant}>
                     {executionPathStatus.label}
@@ -751,11 +800,13 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      {/* 5-panel grid: S spans left column, A/B top-right, C/D bottom-right */}
+      {/* Agent-panel grid: S spans left column. A/B/C/D fill the center quadrants.
+          When the security audit starts, E is added on the right (same size as S)
+          and the center columns squish to accommodate. */}
       <div
         className="grid gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a]"
         style={{
-          gridTemplateColumns: '30% 1fr 1fr',
+          gridTemplateColumns: auditHasStarted ? '25% 1fr 1fr 25%' : '30% 1fr 1fr',
           gridTemplateRows: '1fr 1fr',
           height: '100vh',
         }}
@@ -957,6 +1008,35 @@ export default function PipelinePage() {
             </div>
           );
         })}
+
+        {/* E — Security Auditor, spans both rows in the rightmost column. Only rendered once the audit has started. */}
+        {auditHasStarted && (
+          <SecurityAuditPanel
+            findings={state.auditFindings || []}
+            chatEvents={agentEvents('E' as AgentId)}
+            auditActionInFlight={!!state.auditActionInFlight}
+            pipelineStatus={state.pipelineStatus}
+            currentPhase={state.currentPhase}
+            buildComplete={!!state.buildComplete}
+            isSelected={selectedAgent === 'E'}
+            isSending={sendingAgents.has('E' as AgentId)}
+            onSelect={() => { setSelectedAgent('E' as AgentId); setExpandedAgent('E' as AgentId); }}
+            onSendToC={(id) => { void sendFindingToC(id); }}
+            onDismiss={(id) => { void dismissFinding(id); }}
+            onDeploy={() => { void deployAfterAudit(); }}
+            onSendChat={(msg) => {
+              setSendingAgents((prev) => new Set([...prev, 'E' as AgentId]));
+              void sendChat('E' as AgentId, msg, isPipeline ? {
+                securityMode: selectedSecurityMode,
+                permissionMode: selectedPermissionMode,
+                runGoal: selectedRunGoal,
+                runFinalAudit: selectedRunFinalAudit,
+              } : undefined).finally(() => {
+                setSendingAgents((prev) => { const n = new Set(prev); n.delete('E' as AgentId); return n; });
+              });
+            }}
+          />
+        )}
       </div>
 
       {/* Agent Detail Modal */}

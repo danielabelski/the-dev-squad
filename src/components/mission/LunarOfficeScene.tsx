@@ -30,7 +30,8 @@ interface WorkerPos {
 const WORKER_TO_AGENT: Record<WorkerId, AgentId> = {
   planner: 'A', reviewer: 'B', coder: 'C', tester: 'D', supervisor: 'S',
 };
-const AGENT_TO_WORKER: Record<AgentId, WorkerId> = {
+// E (Security Auditor) intentionally omitted — runs only at end of build, not part of the office scene.
+const AGENT_TO_WORKER: Partial<Record<AgentId, WorkerId>> = {
   A: 'planner', B: 'reviewer', C: 'coder', D: 'tester', S: 'supervisor',
 };
 
@@ -203,8 +204,9 @@ const phaseLabels: Record<string, string> = {
   complete: 'Build complete',
 };
 
-// Per-agent speech — describes what each agent is doing when active in a phase
-const agentSpeechPool: Record<AgentId, Record<string, string[]>> = {
+// Per-agent speech — describes what each agent is doing when active in a phase.
+// E omitted: it never appears as an office worker — it runs only at end-of-build.
+const agentSpeechPool: Partial<Record<AgentId, Record<string, string[]>>> = {
   A: {
     concept: [
       'Reading the brief...',
@@ -945,7 +947,7 @@ export function LunarOfficeScene({
   // Speech only shows after walking stops, randomized per agent per phase
   const [showSpeech, setShowSpeech] = useState(false);
   const [currentSpeech, setCurrentSpeech] = useState<Record<AgentId, string>>({
-    A: '', B: '', C: '', D: '', S: '',
+    A: '', B: '', C: '', D: '', E: '', S: '',
   });
   useLayoutEffect(() => {
     setShowSpeech(false);
@@ -954,6 +956,7 @@ export function LunarOfficeScene({
       B: getRandomSpeech('B', activePhase),
       C: getRandomSpeech('C', activePhase),
       D: getRandomSpeech('D', activePhase),
+      E: '',
       S: getRandomSpeech('S', activePhase),
     });
     const timer = window.setTimeout(() => setShowSpeech(true), 3200);

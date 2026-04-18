@@ -62,7 +62,12 @@ export async function POST(req: NextRequest) {
             state.pipelineStatus = 'idle';
             state.stopAfterPhase = 'none';
             state.resumeAction = 'none';
-            state.agentStatus = { A: 'idle', B: 'idle', C: 'idle', D: 'idle', S: 'idle' };
+            state.resumeActionTarget = undefined;
+            state.runFinalAudit = false;
+            state.auditFindings = [];
+            state.auditDeployPending = false;
+            state.auditActionInFlight = false;
+            state.agentStatus = { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' };
             state.sessions = {};
             state.events = [];
             state.usage = {

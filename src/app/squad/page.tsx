@@ -13,6 +13,7 @@ const AGENT_NAMES: Record<AgentId, string> = {
   B: 'Plan Reviewer',
   C: 'Coder',
   D: 'Tester',
+  E: 'Security Auditor',
   S: 'Supervisor',
 };
 
@@ -22,6 +23,7 @@ const AGENT_DESCRIPTIONS: Record<AgentId, string> = {
   B: 'Challenges the plan until there are no gaps.',
   C: 'Builds the approved plan.',
   D: 'Reviews and tests the implementation.',
+  E: 'Optional. Audits the final code for OWASP-class vulnerabilities. Runs only when enabled at build start.',
 };
 
 const PHASE_LABELS: Record<string, string> = {
@@ -31,6 +33,7 @@ const PHASE_LABELS: Record<string, string> = {
   coding: 'Coding',
   'code-review': 'Code Review',
   testing: 'Testing',
+  'security-audit': 'Security Audit',
   deploy: 'Deploy',
   complete: 'Complete',
 };
@@ -63,6 +66,7 @@ export default function SquadPage() {
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
+  const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
   const [chatInput, setChatInput] = useState('');
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
@@ -96,9 +100,11 @@ export default function SquadPage() {
   const pipelinePaused = isPipeline && state.pipelineStatus === 'paused';
   const activeSecurityMode = state.projectDir ? (state.securityMode || 'fast') : selectedSecurityMode;
   const activeRunGoal = state.projectDir ? (state.runGoal || 'full-build') : selectedRunGoal;
+  const activeRunFinalAudit = state.projectDir ? !!state.runFinalAudit : selectedRunFinalAudit;
   const securityModeLocked = isPipeline && (pipelineRunning || pipelinePaused || !!state.projectDir);
   const displayedSecurityMode = securityModeLocked ? activeSecurityMode : selectedSecurityMode;
   const displayedRunGoal = securityModeLocked ? activeRunGoal : selectedRunGoal;
+  const displayedRunFinalAudit = securityModeLocked ? activeRunFinalAudit : selectedRunFinalAudit;
   const stopAfterReviewArmed = state.stopAfterPhase === 'plan-review' || activeRunGoal === 'plan-only';
   const canContinueApprovedPlan = pipelinePaused && state.currentPhase === 'plan-review';
 
@@ -131,6 +137,7 @@ export default function SquadPage() {
     await sendChat(selectedAgent, message, isPipeline ? {
       securityMode: selectedSecurityMode,
       runGoal: selectedRunGoal,
+      runFinalAudit: selectedRunFinalAudit,
     } : undefined);
     setChatInput('');
     setSendingAgents((prev) => {
@@ -141,7 +148,7 @@ export default function SquadPage() {
   }
 
   async function handleStart() {
-    await startPipeline(selectedSecurityMode, selectedRunGoal);
+    await startPipeline(selectedSecurityMode, selectedRunGoal, undefined, selectedRunFinalAudit);
     setSelectedAgent('S');
   }
 
@@ -261,6 +268,28 @@ export default function SquadPage() {
                       </button>
                     </div>
                   </div>
+
+                  <div>
+                    <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Security Audit</div>
+                    <div className="flex rounded-lg border border-white/10 bg-white/5 p-1">
+                      <button
+                        onClick={() => setSelectedRunFinalAudit(false)}
+                        disabled={securityModeLocked}
+                        className={`${segmentClass(!displayedRunFinalAudit)} disabled:opacity-40`}
+                        style={!displayedRunFinalAudit ? { background: '#475569' } : undefined}
+                      >
+                        Off
+                      </button>
+                      <button
+                        onClick={() => setSelectedRunFinalAudit(true)}
+                        disabled={securityModeLocked}
+                        className={`${segmentClass(displayedRunFinalAudit)} disabled:opacity-40`}
+                        style={displayedRunFinalAudit ? { background: '#e11d48' } : undefined}
+                      >
+                        On
+                      </button>
+                    </div>
+                  </div>
                 </>
               )}
 
@@ -317,6 +346,9 @@ export default function SquadPage() {
                       <Badge variant={activeRunGoal === 'plan-only' ? 'purple' : 'neutral'}>
                         {activeRunGoal === 'plan-only' ? 'PLAN ONLY' : 'FULL BUILD'}
                       </Badge>
+                      {activeRunFinalAudit && (
+                        <Badge variant="warning">AUDIT ON</Badge>
+                      )}
                     </>
                   )}
                   {executionPathStatus && (

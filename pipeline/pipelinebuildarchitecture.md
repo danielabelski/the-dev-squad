@@ -1,8 +1,8 @@
 # Pipeline Build Architecture
 
-One supervisor. Four specialists. They pass work back and forth until it's right.
+One supervisor. Four core specialists, plus one optional security auditor. They pass work back and forth until it's right.
 
-This file is the conceptual pipeline sketch. For the current implementation and security model, use [ARCHITECTURE.md](../ARCHITECTURE.md), [SECURITY.md](../SECURITY.md), and [SECURITY-ROADMAP.md](../SECURITY-ROADMAP.md). For the supervisor/operator direction, use [SUPERVISOR-BUILD-PLAN.md](../SUPERVISOR-BUILD-PLAN.md).
+This file is the conceptual pipeline sketch. For the current implementation and security model, use [ARCHITECTURE.md](../ARCHITECTURE.md), [SECURITY.md](../SECURITY.md), and [SECURITY-ROADMAP.md](../SECURITY-ROADMAP.md).
 
 ---
 
@@ -13,6 +13,7 @@ This file is the conceptual pipeline sketch. For the current implementation and 
 - **B — Plan Reviewer**: Pokes holes in the plan until there are none left
 - **C — Coder**: Follows the approved plan and writes the code
 - **D — Code Reviewer + Tester**: Reviews the code against the plan, then tests it
+- **E — Security Auditor** *(optional)*: Read-only OWASP-class audit after `D` reports tests passing. Only runs if the user enabled the Security Audit toggle at build start. Severity-ranked findings are surfaced to the user, not auto-merged. The user decides per finding whether to send a scoped fix to `C`, dismiss, or ignore — then explicitly clicks Deploy.
 
 ## Shared Doctrine
 
@@ -66,11 +67,24 @@ That is the backbone of the team model. The hook supports discipline and safety,
 
 23. **D** runs the code. Tests it. Confirms it actually works — not just that it looks right, but that it runs.
 24. If tests fail, **D** sends failures back to **C** with what broke. **C** fixes and sends back. **D** tests again.
-25. When **D** is satisfied the code is correct and working, **D** sends it back to **A**.
+25. When **D** is satisfied the code is correct and working, **D** sends it forward.
+
+### Phase 4b: Security Audit (optional)
+
+This phase runs only if the user enabled the **Security Audit** toggle at build start.
+
+25a. **D** sends the reviewed and tested code to **E**.
+25b. **E** reads the locked plan and every file **C** produced. Static analysis only — no Bash, no Write/Edit, no `WebSearch`/`WebFetch`, no Agent tool.
+25c. **E** audits for OWASP Top 10, path traversal, ReDoS, and missing input validation. Each finding is ranked `critical` / `high` / `medium` / `low`.
+25d. **E** emits a structured verdict (`{status: "approved"}` or `{status: "issues", "issues": [{severity, finding}, ...]}`) and the orchestrator pauses the pipeline (`pipelineStatus = 'awaiting-audit-decision'`).
+25e. The user reviews findings in the Security Audit panel. Per finding, the user picks **Send to C** (scoped fix → **D** verifies tests → **E** re-audits only that finding) or **Dismiss** (logged in events).
+25f. The user clicks **Deploy now** to advance. A confirmation modal warns if any findings remain unresolved.
+
+If the toggle is off, this phase does not run and the pipeline goes straight from Phase 4 to Phase 5.
 
 ### Phase 5: Deploy
 
-26. **A** receives the reviewed and tested code.
+26. **A** receives the reviewed (and optionally audited) code.
 27. The orchestrator handles final host-side commit/open behavior if applicable, and **A** confirms the build is complete.
 28. Build complete.
 
@@ -81,8 +95,9 @@ That is the backbone of the team model. The hook supports discipline and safety,
 - **A** is still the central worker inside the current pipeline flow.
 - **S** is the supervisor above the flow and the direction for the human-facing operator role.
 - **B** only ever talks to **A**. B reviews the plan and nothing else.
-- **C** talks to **A** (questions) and **D** (code handoff and fixes).
-- **D** talks to **C** (review feedback) and **A** (final handoff when done).
+- **C** talks to **A** (questions) and **D** (code handoff and fixes). **C** may also receive scoped security fix requests from the orchestrator during the optional Phase 4b.
+- **D** talks to **C** (review feedback) and forwards the final result. During the optional Phase 4b, the orchestrator may also ask **D** to verify a scoped security fix by re-running tests.
+- **E** does not talk to any other agent. **E** reads, audits, emits a JSON verdict, and answers the user's follow-up questions about findings. The orchestrator handles all handoffs to and from **E**.
 - Every agent is aware of every other agent and their role.
 - The pipeline creates a project folder in `~/Builds/` for every build. All files live there — plan, checklist, code.
 - **A** reads and follows `build-plan-template.md`. The entire checklist — research, write, verify, context, review — is A's job. A completes every checkbox before sending anything to B. A sends the plan with context so B knows what was researched and verified.

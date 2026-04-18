@@ -4,11 +4,23 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.3.17-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/claude-opus%204.6-blueviolet" alt="Claude Opus 4.6" />
-  <img src="https://img.shields.io/badge/agents-5-orange" alt="5 Agents" />
+  <img src="https://img.shields.io/badge/agents-6-orange" alt="6 Agents" />
   <img src="https://img.shields.io/badge/node-22%2B-339933" alt="Node 22+" />
+  <img src="https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" alt="macOS" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/no_API_key-required-success" alt="No API key required" />
+  <img src="https://img.shields.io/badge/built_with-Claude_Code-blueviolet" alt="Built with Claude Code" />
+  <img src="https://img.shields.io/badge/runs_on-Claude_subscription-blue" alt="Runs on Claude subscription" />
+  <img src="https://img.shields.io/github/stars/johnkf5-ops/the-dev-squad?style=social" alt="GitHub stars" />
+  <img src="https://img.shields.io/github/forks/johnkf5-ops/the-dev-squad?style=social" alt="GitHub forks" />
+  <img src="https://img.shields.io/github/last-commit/johnkf5-ops/the-dev-squad" alt="Last commit" />
+  <img src="https://img.shields.io/github/issues/johnkf5-ops/the-dev-squad" alt="Open issues" />
 </p>
 
 <p align="center">
@@ -50,6 +62,7 @@ The Dev Squad is Claude with its own dev team:
 - the **Plan Reviewer** pushes on the plan until there are no gaps
 - the **Coder** builds the approved plan
 - the **Tester** checks the result against the plan and sends fixes back when needed
+- the **Security Auditor** is optional — toggle it on at build start and a final OWASP-class read-only audit runs after testing, with severity-ranked findings you choose what to do with before deploy
 - the whole team follows the same doctrine: `build-plan-template.md`, `checklist.md`, and the approved `plan.md`
 - you can talk to the supervisor by default or jump directly into any specialist chat whenever you want
 
@@ -61,9 +74,9 @@ Today, the current product shape is already visible:
   - the **Office View** for the full visual dashboard
   - the **Squad View** for a calmer Supervisor-first workspace without the office UI
 
-Internally the app still labels the team as `S`, `A`, `B`, `C`, and `D`. In the product, think of them as the **Supervisor**, **Planner**, **Plan Reviewer**, **Coder**, and **Tester**.
+Internally the app labels the team as `S`, `A`, `B`, `C`, `D`, and `E`. In the product, think of them as the **Supervisor**, **Planner**, **Plan Reviewer**, **Coder**, **Tester**, and **Security Auditor** (optional).
 
-The longer-term implementation plan for pushing even more authority into the supervisor lives in [SUPERVISOR-BUILD-PLAN.md](SUPERVISOR-BUILD-PLAN.md). The concrete `v0.4` containment plan lives in [SANDBOX-RUNNER-PLAN.md](SANDBOX-RUNNER-PLAN.md). The next UX + headless-mode plan lives in [UI-AND-HEADLESS-PLAN.md](UI-AND-HEADLESS-PLAN.md).
+For the architecture, security model, and current honest stance on what we ship vs. what we deliberately don't, see [ARCHITECTURE.md](ARCHITECTURE.md), [SECURITY.md](SECURITY.md), and [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md).
 
 ---
 
@@ -76,8 +89,9 @@ The longer-term implementation plan for pushing even more authority into the sup
 | **Plan Reviewer** | Reads the planner's work and tears it apart. Asks hard questions. Loops with the planner until there are zero gaps. | `B` |
 | **Coder** | Follows the approved plan exactly. Writes every file, installs deps, and builds the project. No improvising. | `C` |
 | **Tester** | Reviews the code against the approved plan, runs it, catches bugs, and loops with the coder until everything passes. | `D` |
+| **Security Auditor** *(optional)* | Read-only OWASP-class audit after testing succeeds. Ranks findings by severity. You choose what to fix, dismiss, or ignore — and when to deploy. Only runs if the Security Audit toggle is on at build start. | `E` |
 
-Each team member is a separate Claude Code session running Claude Opus 4.6. They communicate through structured JSON signals routed by an orchestrator. Restrictions are enforced by a `PreToolUse` hook, but the real product idea is not “a hook-driven pipeline.” It is a supervisor-led dev team that all follows the same build doctrine: the build plan template, the checklist, and the locked plan. See [SECURITY.md](SECURITY.md) for the threat model and known limitations.
+Each team member is a separate Claude Code session running Claude Opus 4.6. They communicate through structured JSON signals routed by an orchestrator. Restrictions are enforced by a `PreToolUse` hook, but the real product idea is not "a hook-driven pipeline." It is a supervisor-led dev team that all follows the same build doctrine: the build plan template, the checklist, and the locked plan. See [SECURITY.md](SECURITY.md) for the threat model and known limitations.
 
 ## How It Works
 
@@ -103,9 +117,11 @@ Large planning runs are often the slowest part of the system. For bigger builds,
 
 **Phase 3: Code Review + Testing** — The tester reads the plan and the code. Checks every item. If anything doesn't match or fails, the tester sends issues back to the coder. They loop until the tester approves and all tests pass.
 
+**Phase 3.5: Security Audit (optional)** — If the Security Audit toggle was on at build start, the security auditor (`E`) does a final read-only pass for OWASP-class issues, path traversal, ReDoS, and missing input validation. Findings are ranked critical/high/medium/low. The pipeline pauses; you decide per finding whether to send a scoped fix to the coder (the coder fixes, the tester verifies tests, the auditor re-audits just that finding), dismiss, or ignore. Then you click Deploy.
+
 **Phase 4: Deploy** — The finished project is ready.
 
-The plan-review loop between the planner and the plan reviewer catches design gaps before a single line of code is written. The test loop between the coder and the tester catches implementation bugs before anything ships. Each loop has no round limit — they keep going until it's right.
+The plan-review loop between the planner and the plan reviewer catches design gaps before a single line of code is written. The test loop between the coder and the tester catches implementation bugs before anything ships. The optional security audit is a final read-only sanity check before you ship. Each loop has no round limit — they keep going until it's right.
 
 ---
 
@@ -117,15 +133,15 @@ A pixel art office where 5 agents sit at desks. You watch them work in real-time
 
 - **Live Feed** — Every event from every agent, timestamped and color-coded
 - **Dashboard** — Phase progress, elapsed time, file count, errors
-- **Execution Path** — The dashboard now says whether a run is on `Host`, `Isolated Alpha`, or `Host Fallback`
 - **Supervisor Update** — A manager-style summary of what the team is doing, what is blocked, and what S needs from you next
 - **Current Turn** — Shows which agent turn is active, what it is doing, and whether it looks stalled
 - **5-Panel Grid** — Supervisor panel on the left, Planner / Plan Reviewer / Coder / Tester on the right. Each panel shows that agent's activity with auto-scroll. Click any panel to expand.
 - **Per-Panel Chat** — Each panel has its own input. Talk directly to any agent.
-- **Controls** — `Full Build` / `Plan Only`, `START`, `STOP AFTER REVIEW`, `CONTINUE BUILD`, `RESUME STALLED RUN`, `STOP`, `Reset`, `View Plan`. These now act as fallback controls; you can also ask the supervisor to do the same things in chat.
+- **Security Audit Panel** — When the optional Security Audit toggle is on, a dedicated Agent E panel slides in on the right after testing succeeds. The other agent panels squish to make room. Findings list with per-finding `Send to C` / `Dismiss` buttons, a chat with E for follow-up questions, and a gated `Deploy now` button with a confirmation modal.
+- **Controls** — `Full Build` / `Plan Only`, `Security Audit Off / On`, `START`, `STOP AFTER REVIEW`, `CONTINUE BUILD`, `RESUME STALLED RUN`, `STOP`, `Reset`, `View Plan`. These now act as fallback controls; you can also ask the supervisor to do the same things in chat.
 - **Art style** — The office scene uses a mix of original pixel sprites and CSS-drawn props
 
-When idle, agents wander the office, visit the hookah lounge, and play ping pong.
+When idle, agents wander the office, visit the hookah lounge, and play ping pong. Agent E does not appear in the office scene — it only exists when the optional audit runs.
 
 ### Squad View
 
@@ -143,8 +159,8 @@ Open it at [http://localhost:3000/squad](http://localhost:3000/squad).
 ## Requirements
 
 - **Claude Code CLI** — this is the engine. You must have the `claude` command installed and working in your terminal. Install it from [claude.ai/code](https://claude.ai/code).
-- **Active Claude subscription** — Max, Pro, or Team. All 5 agent sessions run on your subscription. No API key needed.
-- **Current `v0.4` sandbox note** — the Docker worker architecture is built and actively integrated, but it is still alpha. If Claude Code subscription auth is unavailable for an isolated worker turn, The Dev Squad falls back to host execution instead of hard-failing the run. We did not abandon isolation; the remaining blocker is reliable subscription auth inside containers.
+- **Active Claude subscription** — Max, Pro, or Team. All agent sessions run on your subscription. No API key needed.
+- **Sandboxing note** — The Dev Squad is **not** a sandbox. The hook is a discipline guardrail, not OS-level isolation. The repo includes a Docker runner abstraction that works in narrow conditions, but Claude Code subscription auth inside containers is too unreliable to make sandboxed execution the default. If you need real OS-level isolation, run The Dev Squad inside a VM you own. See [SECURITY.md](SECURITY.md) and [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md) for the honest threat model.
 - **Node.js 22+**
 - **pnpm**
 
@@ -249,11 +265,15 @@ The Supervisor panel on the left is the clearest version of the product idea. It
 | **PIPELINE / MANUAL** | Both | Toggle between autonomous pipeline and manual orchestration |
 | **Model Picker** | Manual | Choose Claude model (Opus or Sonnet) |
 | **Full Build / Plan Only** | Pipeline | Chooses whether the supervisor should run the whole team or stop after approved plan review |
+| **Security Audit Off / On** | Pipeline | Optional. When on, Agent E runs a final OWASP-class read-only audit after testing succeeds and the pipeline pauses for your per-finding review and explicit Deploy. Default Off. |
 | **START** | Pipeline | Fallback button that creates the project directory, spawns the orchestrator, and begins the selected supervisor goal |
 | **STOP AFTER REVIEW** | Pipeline | Arms a clean pause once the plan reviewer approves the plan |
 | **KEEP RUNNING AFTER REVIEW** | Pipeline | Clears the stop-after-review request and lets the run continue into coding |
 | **CONTINUE BUILD** | Pipeline | Resumes a paused plan-only / stopped-after-review run from the approved plan |
 | **RESUME STALLED RUN** | Pipeline | Re-launches the orchestrator and resumes a stalled planner/plan-reviewer turn from the saved Claude session |
+| **Send to C** *(Security Audit panel)* | Pipeline | Sends one specific finding to the coder for a scoped fix. The tester then verifies tests, the auditor re-audits that one finding. |
+| **Dismiss** *(Security Audit panel)* | Pipeline | Marks a finding as acknowledged-but-not-fixing. Logged in the event stream. |
+| **Deploy now** *(Security Audit panel)* | Pipeline | Confirms you are done reviewing findings and runs the deploy step (commit + open file). A modal asks for confirmation. |
 | **STOP** | Pipeline | Kills orchestrator and all agent sessions immediately |
 | **Reset** | Both | Clears all state. In pipeline mode, also stops the orchestrator. |
 | **View Plan** | Pipeline | Opens `plan.md` in a modal (appears after the planner writes the plan) |
@@ -270,7 +290,7 @@ This project is meant to provide practical guardrails and a disciplined workflow
 Plain-English status:
 - **Pipeline mode** is the more structured path today
 - **Manual mode** still has Claude permission prompts, but fewer product-level guardrails
-- **Isolated/Docker mode** is built under the hood, but not public-ready yet
+- **Sandboxed/isolated execution** is **not** an active roadmap item. The Docker runner code remains for narrow cases, but Claude Code subscription auth inside containers is too unreliable to make sandboxed execution a default. If you need OS-level isolation, run The Dev Squad inside a VM you own.
 
 | Team Member | Can Write | Can Run Bash | Can Spawn Agents |
 |-------------|-----------|-------------|-----------------|
@@ -278,13 +298,15 @@ Plain-English status:
 | Plan Reviewer (`B`) | Nothing | No | No |
 | Coder (`C`) | Current project only (except `plan.md`) | Yes (dangerous cmds need approval) | No |
 | Tester (`D`) | Nothing | Yes (dangerous cmds need approval) | No |
+| Security Auditor (`E`) *(optional)* | Nothing | No | No |
 | Supervisor (`S`) | `~/Builds/` only (no `.claude/`) | Yes (pattern-restricted) | No |
 
 Additional protections:
-- `Write`/`Edit`/`NotebookEdit` are jailed to the current project for the planner/coder and blocked for the reviewer/tester
+- `Write`/`Edit`/`NotebookEdit` are jailed to the current project for the planner/coder and blocked for the reviewer/tester/auditor
 - Pipeline sessions set `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`, so Bash `cd` does not persist into later file-edit tool calls
 - Plan is locked after the plan reviewer approves — no agent can modify it
 - The planner and plan reviewer can use `WebSearch` and `WebFetch` for direct-source research and review
+- The security auditor is read-only — no Bash, no Write/Edit, no Web, no Agent tool
 - Fast mode auto-approves safer Bash and asks for riskier Bash
 - Strict mode requires approval for every Bash call from the coder and tester
 - All sessions default to `--permission-mode auto` for Claude's built-in safety classifier
@@ -292,9 +314,10 @@ Additional protections:
 
 Roadmap:
 - **Fast mode** stays the default for autonomy
-- **Strict mode** is now available for pipeline runs
-- **Isolated mode** will move agents into per-project sandboxes for stronger containment
+- **Strict mode** is available for pipeline runs
+- **Optional Security Audit (Agent E)** is live in `v0.4.0` — final OWASP-class pass with severity ranking, user-controlled fix loop, and explicit deploy gate
 - **Request-scoped approvals** are live; strict-mode approvals are now tied to explicit request records instead of "latest project wins"
+- **Host-owned policy service** (planned for `v0.5`, no ship date) — moves trust outside the agent-writable workspace
 - The concrete implementation plan lives in [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md)
 
 ---
@@ -315,6 +338,14 @@ Agents communicate via structured JSON — no text parsing:
 // D testing
 { "status": "passed" }
 { "status": "failed", "failures": ["PUT /users returns 500"] }
+
+// E auditing (optional final pass)
+{ "status": "approved" }
+{ "status": "issues", "issues": [
+    { "severity": "critical", "finding": "[src/api/auth.ts:42] SQL injection: ..." },
+    { "severity": "medium",   "finding": "[src/utils/regex.ts:7] ReDoS: ..." }
+  ]
+}
 ```
 
 The orchestrator routes these signals between agents and advances the pipeline when an approval is received.

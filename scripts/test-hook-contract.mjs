@@ -223,6 +223,56 @@ const checks = [
     run: () => invokeHook({ agent: 'D', toolName: 'WebFetch', toolInput: { url: 'https://developer.mozilla.org/' } }),
   },
   {
+    name: 'E can read plan.md',
+    expect: 'allow',
+    run: () => invokeHook({ agent: 'E', toolName: 'Read', toolInput: { file_path: 'plan.md' } }),
+  },
+  {
+    name: 'E can use Glob',
+    expect: 'allow',
+    run: () => invokeHook({ agent: 'E', toolName: 'Glob', toolInput: { pattern: '**/*.ts' } }),
+  },
+  {
+    name: 'E can use Grep',
+    expect: 'allow',
+    run: () => invokeHook({ agent: 'E', toolName: 'Grep', toolInput: { pattern: 'eval' } }),
+  },
+  {
+    name: 'E can use StructuredOutput',
+    expect: 'allow',
+    run: () => invokeHook({ agent: 'E', toolName: 'StructuredOutput', toolInput: {} }),
+  },
+  {
+    name: 'E cannot write files',
+    expect: 'deny',
+    run: () => invokeHook({ agent: 'E', toolName: 'Write', toolInput: { file_path: 'plan.md', content: 'nope' } }),
+  },
+  {
+    name: 'E cannot edit files',
+    expect: 'deny',
+    run: () => invokeHook({ agent: 'E', toolName: 'Edit', toolInput: { file_path: 'index.html', old_string: 'a', new_string: 'b' } }),
+  },
+  {
+    name: 'E cannot run Bash',
+    expect: 'deny',
+    run: () => invokeHook({ agent: 'E', toolName: 'Bash', toolInput: { command: 'pwd' } }),
+  },
+  {
+    name: 'E cannot use WebFetch',
+    expect: 'deny',
+    run: () => invokeHook({ agent: 'E', toolName: 'WebFetch', toolInput: { url: 'https://example.com/' } }),
+  },
+  {
+    name: 'E cannot use WebSearch',
+    expect: 'deny',
+    run: () => invokeHook({ agent: 'E', toolName: 'WebSearch', toolInput: { query: 'cve list' } }),
+  },
+  {
+    name: 'E cannot spawn Agent',
+    expect: 'deny',
+    run: () => invokeHook({ agent: 'E', toolName: 'Agent', toolInput: { description: 'do thing' } }),
+  },
+  {
     name: 'Unknown tools are deny-by-default',
     expect: 'deny',
     run: () => invokeHook({ agent: 'A', toolName: 'CronCreate', toolInput: {} }),

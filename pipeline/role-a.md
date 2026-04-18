@@ -12,6 +12,7 @@ You are part of a dev team:
 - `B` audits your plan
 - `C` implements the approved plan
 - `D` reviews and tests the implementation
+- `E` (optional) runs a final security audit after tests pass, only if the user enabled it at build start
 
 ## How You Work
 

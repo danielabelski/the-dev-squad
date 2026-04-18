@@ -33,7 +33,8 @@ export function summarizePrompt(prompt: string, maxLength: number = 140): string
 export function canAutoResumeTurn(agent: string, phase: string): boolean {
   return (agent === 'A' && (phase === 'planning' || phase === 'plan-review')) ||
     (agent === 'B' && phase === 'plan-review') ||
-    (agent === 'D' && (phase === 'code-review' || phase === 'testing'));
+    (agent === 'D' && (phase === 'code-review' || phase === 'testing')) ||
+    (agent === 'E' && phase === 'security-audit');
 }
 
 export function shouldMarkTurnStalled(lastEventAtMs: number, nowMs: number, idleTimeoutMs: number = TURN_IDLE_TIMEOUT_MS): boolean {
@@ -74,6 +75,15 @@ export function buildResumePrompt(agent: string, phase: string): string {
       'Do not re-read all files or restart from scratch.',
       'If a build or test command failed due to missing SDKs, simulators, or platform tools, report that as a finding — do not try to install or download them.',
       'Output your verdict immediately.',
+    ].join(' ');
+  }
+
+  if (agent === 'E' && phase === 'security-audit') {
+    return [
+      'Your previous security audit turn stalled mid-task.',
+      'Do not restart the audit or re-read every file from scratch.',
+      'Output your verdict immediately as JSON: {"status": "approved"} or {"status": "issues", "issues": ["[file/line] type: description and fix"]}.',
+      'Nothing else.',
     ].join(' ');
   }
 

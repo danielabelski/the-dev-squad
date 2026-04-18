@@ -19,12 +19,15 @@ assert.equal(canAutoResumeTurn('A', 'planning'), true);
 assert.equal(canAutoResumeTurn('A', 'plan-review'), true);
 assert.equal(canAutoResumeTurn('B', 'plan-review'), true);
 assert.equal(canAutoResumeTurn('C', 'coding'), false);
+assert.equal(canAutoResumeTurn('E', 'security-audit'), true);
+assert.equal(canAutoResumeTurn('E', 'planning'), false);
 
 assert.equal(shouldMarkTurnStalled(0, TURN_IDLE_TIMEOUT_MS - 1), false);
 assert.equal(shouldMarkTurnStalled(0, TURN_IDLE_TIMEOUT_MS), true);
 
 assert.match(buildResumePrompt('A', 'planning'), /Do not repeat research/i);
 assert.match(buildResumePrompt('B', 'plan-review'), /Output your verdict immediately/i);
+assert.match(buildResumePrompt('E', 'security-audit'), /Output your verdict immediately/i);
 assert.equal(MAX_AUTO_RESUMES, 3);
 
 console.log('pipeline-runtime checks passed');

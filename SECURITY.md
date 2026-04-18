@@ -4,9 +4,15 @@
 
 The hook system prevents the dev team from **accidentally drifting out of role** during normal supervised operation. It is NOT a security sandbox against adversarial or jailbreak-prone models.
 
-If your threat model requires defense against a hostile agent, you need OS-level isolation (containers, chroot, seccomp) — not a bash hook.
+If your threat model requires defense against a hostile agent, run The Dev Squad inside a VM you own. We do not promise OS-level isolation. The Docker runner code in this repo works in narrow conditions but cannot be made the default — Claude Code subscription auth inside containers is not reliable enough today.
 
-The concrete implementation plan for getting there lives in [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md).
+What we DO ship as practical safety:
+- per-agent role guardrails enforced by the `PreToolUse` hook
+- strict mode for human-mediated Bash approval on Coder/Tester
+- the optional Security Audit (Agent E) — a final read-only OWASP-class pass with severity-ranked findings, user-controlled fix loop, and explicit user-gated deploy
+- Claude Code's own `--permission-mode auto` safety classifier on every session
+
+The full layered plan, including what is shipped and what is not, lives in [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md).
 
 This project is provided `AS IS` under the MIT license. Users are responsible for reviewing approvals, protecting secrets, and deciding whether the documented limitations are acceptable for their environment.
 
@@ -31,10 +37,12 @@ The hook reliably prevents:
 - **The Planner (`A`) writing code files via file-edit tools** — only `plan.md` allowed
 - **The Plan Reviewer (`B`) and Tester (`D`) writing via file-edit tools** — all `Write`/`Edit`/`NotebookEdit` calls blocked
 - **The Coder (`C`) modifying `plan.md` via file-edit tools** — locked after review
-- **The Planner (`A`) and Plan Reviewer (`B`) running Bash** — blocked entirely
+- **The Planner (`A`), Plan Reviewer (`B`), and Security Auditor (`E`) running Bash** — blocked entirely
+- **The Security Auditor (`E`) writing files via file-edit tools** — all `Write`/`Edit`/`NotebookEdit` calls blocked (E is read-only)
+- **The Security Auditor (`E`) using `WebSearch`/`WebFetch`** — blocked (no egress for the audit pass)
 - **Any team member spawning sub-agents** — Agent tool blocked for all
 - **Path traversal via `..`** — rejected before resolution
-- **Unknown team identity** — rejected if not A/B/C/D/S
+- **Unknown team identity** — rejected if not A/B/C/D/E/S
 - **Unrecognized tools** — deny-by-default catch-all
 - **Missing/malformed tool names** — rejected on parse
 - **Phase 0 writes by the Planner (`A`)** — blocked, defaults to blocked if events file missing
@@ -93,6 +101,9 @@ The `Write` column below refers to file-edit tools (`Write`, `Edit`, `NotebookEd
 | Plan Reviewer (`B`) | Anywhere | No | No | Yes | Yes | No |
 | Coder (`C`) | Anywhere | Current project under `~/Builds/` (no `plan.md`, no `.claude/`) | Yes (pattern-restricted) | No | No | No |
 | Tester (`D`) | Anywhere | No | Yes (pattern-restricted) | No | No | No |
+| Security Auditor (`E`) | Anywhere | No | No | No | No | No |
+
+Agent E is the strictest role: read-only static analysis, no shell, no egress. It runs only when the optional Security Audit toggle is on, after testing succeeds. See [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md) for the full audit flow.
 
 Pipeline sessions also set `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`, which resets Claude's working directory after each Bash command. This mitigates `cd`-then-`Write` drift, but it does not make Bash read-only.
 
@@ -101,8 +112,10 @@ Pipeline sessions also set `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`, which r
 The build plan is in [SECURITY-ROADMAP.md](SECURITY-ROADMAP.md). In short:
 
 1. **`v0.3`: Strict mode** — shipped; coder/tester Bash now supports "approve every call" with request-scoped approval records and one-time grants for the exact approved command
-2. **`v0.4`: Sandboxed execution** — run agents in containers or equivalent per-project sandboxes
-3. **`v0.5`: Host-owned policy** — move approvals and enforcement outside the repo so agents cannot disable them by editing project files
+2. **`v0.4`: Optional Security Audit (Agent E)** — shipped; OWASP-class read-only audit before deploy with severity ranking, user-controlled per-finding fix loop, and explicit user-gated deploy
+3. **`v0.5`: Host-owned policy** — planned; move approvals and enforcement outside the repo so agents cannot disable them by editing project files
+
+Sandboxed execution is **not** on the near-term roadmap. The Docker runner code remains in the tree for the cases where it works, but Claude Code subscription auth inside containers is too unreliable to make sandboxed execution a default. If you need OS-level isolation today, run The Dev Squad inside a VM you own.
 
 ## Reporting
 

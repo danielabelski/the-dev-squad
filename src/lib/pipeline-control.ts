@@ -95,12 +95,14 @@ export function startPipelineRun(options: {
   securityMode?: SecurityMode;
   permissionMode?: PermissionMode;
   runGoal?: RunGoal;
-}): { success: boolean; error?: string; projectDir?: string; securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal } {
+  runFinalAudit?: boolean;
+}): { success: boolean; error?: string; projectDir?: string; securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean } {
   const securityMode = options.securityMode === 'strict' ? 'strict' : 'fast';
   const permissionMode: PermissionMode = options.permissionMode === 'plan' ? 'plan'
     : options.permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions'
     : 'auto';
   const runGoal = options.runGoal === 'plan-only' ? 'plan-only' : 'full-build';
+  const runFinalAudit = options.runFinalAudit === true;
 
   const activeProject = findLatestProject();
   if (activeProject) {
@@ -156,6 +158,7 @@ export function startPipelineRun(options: {
   stagingState.securityMode = securityMode;
   stagingState.permissionMode = permissionMode;
   stagingState.runGoal = runGoal;
+  stagingState.runFinalAudit = runFinalAudit;
   stagingState.stopAfterPhase = runGoal === 'plan-only' ? 'plan-review' : 'none';
   stagingState.pipelineStatus = 'running';
   stagingState.resumeAction = 'none';
@@ -167,7 +170,7 @@ export function startPipelineRun(options: {
 
   spawnOrchestrator(projectDir, securityMode, aSession || undefined, permissionMode);
 
-  return { success: true, projectDir, securityMode, permissionMode, runGoal };
+  return { success: true, projectDir, securityMode, permissionMode, runGoal, runFinalAudit };
 }
 
 export function setStopAfterReview(enabled: boolean, projectDir?: string): { success: boolean; error?: string; stopAfterPhase?: string; projectDir?: string } {
@@ -254,6 +257,86 @@ export function resumePipelineRun(projectDir?: string): { success: boolean; erro
     : 'auto';
   spawnOrchestrator(resolvedProjectDir, state.securityMode === 'strict' ? 'strict' : 'fast', undefined, resumePermission);
   return { success: true, projectDir: resolvedProjectDir, action };
+}
+
+export type AuditAction = 'send-to-c' | 'dismiss' | 'deploy';
+
+export function startAuditAction(
+  action: AuditAction,
+  findingId: string | undefined,
+  projectDir?: string
+): { success: boolean; error?: string; status?: number; projectDir?: string } {
+  const resolvedProjectDir = projectDir || findLatestProject();
+  if (!resolvedProjectDir) {
+    return { success: false, error: 'No pipeline project found', status: 404 };
+  }
+
+  const file = join(resolvedProjectDir, 'pipeline-events.json');
+  const state = readJson(file);
+  if (!state) {
+    return { success: false, error: 'No pipeline state found for that project', status: 404 };
+  }
+
+  if (state.pipelineStatus !== 'awaiting-audit-decision') {
+    return {
+      success: false,
+      error: `Audit actions are only valid when pipelineStatus is 'awaiting-audit-decision' (current: ${String(state.pipelineStatus)})`,
+      status: 409,
+    };
+  }
+
+  if (state.auditActionInFlight === true) {
+    return {
+      success: false,
+      error: 'An audit action is already in flight — wait for it to complete before starting another.',
+      status: 409,
+    };
+  }
+
+  const findings = Array.isArray(state.auditFindings) ? state.auditFindings as Array<Record<string, unknown>> : [];
+
+  if (action === 'send-to-c' || action === 'dismiss') {
+    if (!findingId) {
+      return { success: false, error: `findingId is required for action '${action}'`, status: 400 };
+    }
+    const finding = findings.find((f) => typeof f?.id === 'string' && f.id === findingId);
+    if (!finding) {
+      return { success: false, error: `Unknown findingId: ${findingId}`, status: 400 };
+    }
+    const allowedStatuses = ['open', 'still-open'];
+    if (typeof finding.status === 'string' && !allowedStatuses.includes(finding.status)) {
+      return {
+        success: false,
+        error: `Finding ${findingId} has status '${finding.status}'; only 'open' or 'still-open' findings can be acted on`,
+        status: 409,
+      };
+    }
+  } else if (action === 'deploy') {
+    // No findingId required. Deploy is always valid while awaiting-audit-decision.
+  } else {
+    return { success: false, error: `Unknown action: ${String(action)}`, status: 400 };
+  }
+
+  const resumeAction: 'audit-send-to-c' | 'audit-dismiss' | 'audit-deploy' =
+    action === 'send-to-c' ? 'audit-send-to-c' : action === 'dismiss' ? 'audit-dismiss' : 'audit-deploy';
+
+  state.resumeAction = resumeAction;
+  state.resumeActionTarget = action === 'deploy' ? undefined : findingId;
+  state.auditActionInFlight = true;
+  writeJson(file, state);
+
+  const permissionMode: PermissionMode =
+    state.permissionMode === 'plan' ? 'plan'
+    : state.permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions'
+    : 'auto';
+  spawnOrchestrator(
+    resolvedProjectDir,
+    state.securityMode === 'strict' ? 'strict' : 'fast',
+    undefined,
+    permissionMode
+  );
+
+  return { success: true, projectDir: resolvedProjectDir };
 }
 
 export function stopPipelineRun(projectDir?: string): { success: boolean; projectDir?: string } {

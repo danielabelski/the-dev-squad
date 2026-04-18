@@ -19,11 +19,19 @@ interface RuntimeLike {
   } | null;
 }
 
+interface AuditFindingLike {
+  id?: string;
+  severity?: string;
+  text?: string;
+  status?: string;
+}
+
 interface PipelineStateLike {
   concept?: string;
   currentPhase?: string;
   securityMode?: string;
   runGoal?: string;
+  runFinalAudit?: boolean;
   stopAfterPhase?: string;
   pipelineStatus?: string;
   activeAgent?: string;
@@ -31,6 +39,35 @@ interface PipelineStateLike {
   agentStatus?: Record<string, string>;
   runtime?: RuntimeLike;
   events?: PipelineEventLike[];
+  auditFindings?: AuditFindingLike[];
+  auditDeployPending?: boolean;
+  auditActionInFlight?: boolean;
+}
+
+function summarizeAuditFindings(findings: AuditFindingLike[] | undefined): {
+  total: number;
+  severitySummary: string;
+  statusBreakdown: { resolved: number; dismissed: number; open: number; inFlight: number };
+} {
+  const list = Array.isArray(findings) ? findings : [];
+  const severities = ['critical', 'high', 'medium', 'low'] as const;
+  const counts: Record<string, number> = {};
+  let resolved = 0, dismissed = 0, open = 0, inFlight = 0;
+  for (const f of list) {
+    const sev = typeof f.severity === 'string' ? f.severity : 'unknown';
+    counts[sev] = (counts[sev] || 0) + 1;
+    const status = typeof f.status === 'string' ? f.status : 'open';
+    if (status === 'resolved') resolved += 1;
+    else if (status === 'dismissed') dismissed += 1;
+    else if (status === 'sent-to-c' || status === 're-auditing') inFlight += 1;
+    else open += 1;
+  }
+  const parts = severities.filter((s) => counts[s]).map((s) => `${counts[s]} ${s}`);
+  return {
+    total: list.length,
+    severitySummary: parts.join(', ') || '',
+    statusBreakdown: { resolved, dismissed, open, inFlight },
+  };
 }
 
 export interface SupervisorRecommendation {
@@ -55,8 +92,8 @@ export interface ExecutionPathStatus {
 }
 
 function formatAgentStatuses(agentStatus: Record<string, string> | undefined): string {
-  if (!agentStatus) return 'A=idle, B=idle, C=idle, D=idle, S=idle';
-  return ['A', 'B', 'C', 'D', 'S']
+  if (!agentStatus) return 'A=idle, B=idle, C=idle, D=idle, E=idle, S=idle';
+  return ['A', 'B', 'C', 'D', 'E', 'S']
     .map((agent) => `${agent}=${agentStatus[agent] || 'idle'}`)
     .join(', ');
 }
@@ -339,6 +376,52 @@ export function getSupervisorUpdate(
         severity: 'info',
       };
     }
+
+    if (state.currentPhase === 'security-audit') {
+      if (state.auditActionInFlight) {
+        return {
+          title: 'A scoped security fix is running',
+          summary: 'Per your request, C is applying a scoped fix, then D verifies the tests, then E re-audits just that finding. Other action buttons are disabled until this pass finishes.',
+          ask: 'No action needed — wait for the finding card to update.',
+          severity: 'info',
+        };
+      }
+      return {
+        title: 'The auditor is doing the initial security pass',
+        summary: 'Tests passed. Agent E is reading the code statically for OWASP Top 10, path traversal, ReDoS, and missing input validation. When done, the pipeline will pause so you can review findings and decide what to do.',
+        ask: 'No action needed yet. You will review findings in the Security Audit panel once E finishes.',
+        severity: 'info',
+      };
+    }
+  }
+
+  if (state.pipelineStatus === 'awaiting-audit-decision') {
+    const summary = summarizeAuditFindings(state.auditFindings);
+    if (state.auditActionInFlight) {
+      return {
+        title: 'A scoped security fix is running',
+        summary: `C is applying a scoped fix, D is verifying tests, and E will re-audit that finding. ${summary.total} finding${summary.total === 1 ? '' : 's'} total.`,
+        ask: 'No action needed — the finding card will update when the pass finishes.',
+        severity: 'info',
+      };
+    }
+    if (summary.total === 0) {
+      return {
+        title: 'Audit is clean — waiting on your deploy',
+        summary: 'Agent E found no exploitable vulnerabilities. The pipeline is paused before deploy, waiting for your explicit go.',
+        ask: 'Click "Deploy now" in the Security Audit panel when you are ready to finish the build.',
+        severity: 'success',
+      };
+    }
+    const unresolved = summary.statusBreakdown.open + summary.statusBreakdown.inFlight;
+    return {
+      title: 'Audit findings are waiting on your review',
+      summary: `E reported ${summary.total} finding${summary.total === 1 ? '' : 's'} (${summary.severitySummary}). Resolved: ${summary.statusBreakdown.resolved}. Dismissed: ${summary.statusBreakdown.dismissed}. Open: ${summary.statusBreakdown.open}.`,
+      ask: unresolved > 0
+        ? 'Decide per finding: Send to C to fix, or Dismiss. When done, click "Deploy now".'
+        : 'Everything is handled. Click "Deploy now" when you are ready.',
+      severity: unresolved > 0 ? 'warning' : 'info',
+    };
   }
 
   if (state.buildComplete) {
@@ -393,6 +476,13 @@ export function buildSupervisorSnapshot(
     `Execution path: ${executionPath.label}`,
     `Security mode: ${state.securityMode || 'fast'}`,
     `Run goal: ${state.runGoal || 'full-build'}`,
+    `Final security audit: ${state.runFinalAudit ? 'enabled' : 'disabled'}`,
+    (() => {
+      if (!state.auditFindings || state.auditFindings.length === 0) return 'Audit findings: none';
+      const s = summarizeAuditFindings(state.auditFindings);
+      return `Audit findings: ${s.total} (${s.severitySummary}) — resolved ${s.statusBreakdown.resolved}, dismissed ${s.statusBreakdown.dismissed}, open ${s.statusBreakdown.open}, in-flight ${s.statusBreakdown.inFlight}`;
+    })(),
+    `Audit action in flight: ${state.auditActionInFlight ? 'yes' : 'no'}`,
     `Stop after phase: ${state.stopAfterPhase || 'none'}`,
     `Active agent: ${state.activeAgent || 'none'}`,
     `Build complete: ${state.buildComplete ? 'yes' : 'no'}`,

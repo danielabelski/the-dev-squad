@@ -3,15 +3,32 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { PipelineRuntimeState } from '@/lib/pipeline-runtime';
 
-export type AgentId = 'A' | 'B' | 'C' | 'D' | 'S';
-export type Phase = 'concept' | 'planning' | 'plan-review' | 'coding' | 'code-review' | 'testing' | 'deploy' | 'complete';
+export type AgentId = 'A' | 'B' | 'C' | 'D' | 'E' | 'S';
+export type Phase = 'concept' | 'planning' | 'plan-review' | 'coding' | 'code-review' | 'testing' | 'security-audit' | 'deploy' | 'complete';
 export type AppMode = 'pipeline' | 'manual';
 export type SecurityMode = 'fast' | 'strict';
 export type PermissionMode = 'auto' | 'plan' | 'dangerously-skip-permissions';
 export type RunGoal = 'full-build' | 'plan-only';
 export type StopAfterPhase = 'none' | 'plan-review';
-export type PipelineStatus = 'idle' | 'running' | 'paused' | 'complete' | 'failed';
-export type ResumeAction = 'none' | 'continue-approved-plan' | 'resume-stalled-turn';
+export type PipelineStatus = 'idle' | 'running' | 'paused' | 'awaiting-audit-decision' | 'complete' | 'failed';
+export type ResumeAction = 'none' | 'continue-approved-plan' | 'resume-stalled-turn' | 'audit-send-to-c' | 'audit-dismiss' | 'audit-deploy';
+
+export type AuditFindingStatus = 'open' | 'sent-to-c' | 're-auditing' | 'resolved' | 'still-open' | 'dismissed';
+
+export interface AuditFindingHistoryEntry {
+  time: string;
+  action: 'created' | 'sent-to-c' | 'fix-applied' | 'fix-failed-tests' | 're-audit-passed' | 're-audit-failed' | 'dismissed';
+  note?: string;
+}
+
+export interface AuditFinding {
+  id: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  text: string;
+  status: AuditFindingStatus;
+  createdAt: string;
+  history: AuditFindingHistoryEntry[];
+}
 
 export interface PipelineEvent {
   time: string;
@@ -36,9 +53,11 @@ export interface PipelineState {
   currentPhase: Phase;
   securityMode: SecurityMode;
   runGoal: RunGoal;
+  runFinalAudit: boolean;
   stopAfterPhase: StopAfterPhase;
   pipelineStatus: PipelineStatus;
   resumeAction?: ResumeAction;
+  resumeActionTarget?: string;
   activeAgent: string;
   agentStatus: Record<AgentId, string>;
   sessions: Record<string, string>;
@@ -46,6 +65,9 @@ export interface PipelineState {
   usage: TokenUsage;
   runtime?: PipelineRuntimeState;
   events: PipelineEvent[];
+  auditFindings?: AuditFinding[];
+  auditDeployPending?: boolean;
+  auditActionInFlight?: boolean;
 }
 
 export interface PendingApproval {
@@ -68,16 +90,21 @@ const EMPTY_STATE: PipelineState = {
   currentPhase: 'concept',
   securityMode: 'fast',
   runGoal: 'full-build',
+  runFinalAudit: false,
   stopAfterPhase: 'none',
   pipelineStatus: 'idle',
   resumeAction: 'none',
+  resumeActionTarget: undefined,
   activeAgent: '',
-  agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', S: 'idle' },
+  agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' },
   sessions: {},
   buildComplete: false,
   usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: 0 },
   runtime: { activeTurn: null },
   events: [],
+  auditFindings: [],
+  auditDeployPending: false,
+  auditActionInFlight: false,
 };
 
 interface UsePipelineOptions {
@@ -90,6 +117,7 @@ interface SendChatOptions {
   securityMode?: SecurityMode;
   permissionMode?: PermissionMode;
   runGoal?: RunGoal;
+  runFinalAudit?: boolean;
 }
 
 export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelineOptions) {
@@ -130,16 +158,17 @@ export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelin
         securityMode: options?.securityMode,
         permissionMode: options?.permissionMode,
         runGoal: options?.runGoal,
+        runFinalAudit: options?.runFinalAudit,
       }),
     });
     return res.json();
   }, [mode, model]);
 
-  const startPipeline = useCallback(async (securityMode: SecurityMode, runGoal: RunGoal, permissionMode?: PermissionMode) => {
+  const startPipeline = useCallback(async (securityMode: SecurityMode, runGoal: RunGoal, permissionMode?: PermissionMode, runFinalAudit?: boolean) => {
     const res = await fetch('/api/start-pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ securityMode, permissionMode, runGoal }),
+      body: JSON.stringify({ securityMode, permissionMode, runGoal, runFinalAudit: runFinalAudit === true }),
     });
     return res.json();
   }, []);
@@ -148,6 +177,33 @@ export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelin
     const res = await fetch('/api/resume-pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+    });
+    return res.json();
+  }, []);
+
+  const sendFindingToC = useCallback(async (findingId: string) => {
+    const res = await fetch('/api/audit-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'send-to-c', findingId }),
+    });
+    return res.json();
+  }, []);
+
+  const dismissFinding = useCallback(async (findingId: string) => {
+    const res = await fetch('/api/audit-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'dismiss', findingId }),
+    });
+    return res.json();
+  }, []);
+
+  const deployAfterAudit = useCallback(async () => {
+    const res = await fetch('/api/audit-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deploy' }),
     });
     return res.json();
   }, []);
@@ -228,5 +284,8 @@ export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelin
     resetState,
     agentEvents,
     agentSpeech,
+    sendFindingToC,
+    dismissFinding,
+    deployAfterAudit,
   };
 }
