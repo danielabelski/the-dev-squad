@@ -89,7 +89,7 @@ const runner = createRunner();
 let concept = '';
 let projectDir = '';
 let existingASession = '';
-let securityMode = process.env.PIPELINE_SECURITY_MODE === 'strict' ? 'strict' : 'fast';
+let securityMode: 'fast' | 'strict' = process.env.PIPELINE_SECURITY_MODE === 'strict' ? 'strict' : 'fast';
 let resumingExistingProject = false;
 
 const args = process.argv.slice(2);

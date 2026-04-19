@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:000000,50:00ff41,100:000000&height=200&section=header&text=THE%20DEV%20SQUAD&fontSize=62&fontColor=00ff41&animation=fadeIn&desc=v0.4.1%20%7C%20AGENT%20E%20ONLINE&descAlignY=72&descSize=18" alt="The Dev Squad" />
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:000000,50:00ff41,100:000000&height=200&section=header&text=THE%20DEV%20SQUAD&fontSize=62&fontColor=00ff41&animation=fadeIn&desc=v0.4.2%20%7C%20AGENT%20E%20ONLINE&descAlignY=72&descSize=18" alt="The Dev Squad" />
 </p>
 
 <p align="center">
@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.4.1-00FF41?style=flat-square&labelColor=000000&color=00FF41" alt="v0.4.1" />
+  <img src="https://img.shields.io/badge/v0.4.2-00FF41?style=flat-square&labelColor=000000&color=00FF41" alt="v0.4.2" />
   <img src="https://img.shields.io/badge/MIT-00FF41?style=flat-square&label=LICENSE&labelColor=000000&color=00FF41" alt="MIT" />
   <img src="https://img.shields.io/badge/6-00FF41?style=flat-square&label=AGENTS&labelColor=000000&color=00FF41" alt="6 Agents" />
   <img src="https://img.shields.io/badge/ONLINE-00FF41?style=flat-square&label=STATUS&labelColor=000000&color=00FF41" alt="STATUS ONLINE" />
@@ -88,7 +88,7 @@ For the architecture, security model, and current honest stance on what we ship 
 
 ```
 ╔═══════════════════════════════════════════════════════════════╗
-║  SQUAD ROSTER                                          v0.4.1 ║
+║  SQUAD ROSTER                                          v0.4.2 ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  ● S  │  SUPERVISOR             │  ONLINE                     ║
 ║  ● A  │  PLANNER                │  ONLINE                     ║

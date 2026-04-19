@@ -121,64 +121,47 @@ const idleSpots: { x: number; y: number; label: string }[] = [
   { x: 1120, y: 485, label: 'couch' },
 ];
 
-// Gathering spots — where agents cluster for idle conversations
-// Each spot fits up to 5 agents side by side with ~50px spacing
-const gatherSpots = [
-  { cx: 350, y: 420 },  // between desk 1-2
-  { cx: 550, y: 420 },  // center of room
-  { cx: 750, y: 420 },  // between desk 3-4
-  { cx: 100, y: 380 },  // near water cooler
-];
-
-// Pick random idle spots for non-active workers, avoiding overlaps
-function pickIdlePositions(activeWorkerIds: Set<WorkerId>, seed: number): Record<WorkerId, WorkerPos | null> {
-  const result: Record<string, WorkerPos | null> = {};
-  const usedSpots = new Set<number>();
-  const allWorkerIds: WorkerId[] = ['planner', 'reviewer', 'coder', 'tester', 'supervisor'];
-
-  for (const wId of allWorkerIds) {
-    if (activeWorkerIds.has(wId)) {
-      result[wId] = null; // active workers use phasePositions
-      continue;
-    }
-
-    // 40% chance to stay at desk, 60% chance to wander
-    const rng = ((seed * 31 + wId.charCodeAt(0) * 17) % 100);
-    if (rng < 40) {
-      result[wId] = null; // stay at desk
-      continue;
-    }
-
-    // Pick a random unused spot
-    const startIdx = (seed * 7 + wId.charCodeAt(0) * 13) % idleSpots.length;
-    let found = false;
-    for (let attempt = 0; attempt < idleSpots.length; attempt++) {
-      const idx = (startIdx + attempt) % idleSpots.length;
-      if (!usedSpots.has(idx)) {
-        // Check distance from other assigned spots to avoid overlap
-        const spot = idleSpots[idx];
-        let tooClose = false;
-        for (const usedIdx of usedSpots) {
-          const other = idleSpots[usedIdx];
-          if (Math.abs(spot.x - other.x) < 80 && Math.abs(spot.y - other.y) < 60) {
-            tooClose = true;
-            break;
-          }
-        }
-        if (!tooClose) {
-          usedSpots.add(idx);
-          result[wId] = { x: spot.x, y: spot.y, facing: 'right' };
-          found = true;
-          break;
-        }
-      }
-    }
-    if (!found) {
-      result[wId] = null; // no available spot, stay at desk
-    }
+// Returns positions occupied by all OTHER workers (excluding selfId), considering
+// phase override > current idle position > home. Used to prevent wander overlap.
+// Without this, a wanderer can land on top of a worker that's at home or at a
+// phase-overridden position (e.g. Eddie chilling on the couch at his home spot).
+function computeOccupiedPositions(
+  selfId: WorkerId,
+  activePhase: string,
+  runFinalAudit: boolean,
+  idleNow: Record<WorkerId, WorkerPos | null>,
+): WorkerPos[] {
+  const phaseOverrides = phasePositions[activePhase] || {};
+  const positions: WorkerPos[] = [];
+  for (const w of workers) {
+    if (w.id === selfId) continue;
+    if (w.id === 'auditor' && !runFinalAudit) continue;
+    const phasePos = phaseOverrides[w.id];
+    const idlePos = idleNow[w.id];
+    const home = homePositions[w.id];
+    positions.push(phasePos || idlePos || home);
   }
+  return positions;
+}
 
-  return result as Record<WorkerId, WorkerPos | null>;
+// Determines whether a candidate idle spot is too close to any occupied position,
+// honoring the group-spot exception (couch/hookah/pingpong allow side-by-side
+// stacking with other spots of the same label, but never exact-coord collision).
+function isCandidateBlocked(
+  candidate: { x: number; y: number; label: string },
+  occupied: WorkerPos[],
+): boolean {
+  const candidateIsGroup =
+    candidate.label === 'couch' || candidate.label === 'hookah' || candidate.label === 'pingpong';
+  for (const p of occupied) {
+    if (p.x === candidate.x && p.y === candidate.y) return true; // exact collision — always block
+    if (candidateIsGroup) {
+      const occupiedSpot = idleSpots.find((s) => s.x === p.x && s.y === p.y);
+      if (occupiedSpot && occupiedSpot.label === candidate.label) continue; // same group label, allow
+    }
+    if (Math.abs(candidate.x - p.x) < 80 && Math.abs(candidate.y - p.y) < 60) return true;
+  }
+  return false;
 }
 
 // Which worker is carrying a document in each phase
@@ -772,6 +755,16 @@ export function LunarOfficeScene({
       const delay = 2000 + i * 2500;
 
       const timer = window.setTimeout(() => {
+        // Compute external occupied positions (other workers' actual current positions)
+        // plus already-batched assignments from this wander cycle.
+        const externalOccupied = computeOccupiedPositions(wId, activePhase, runFinalAudit, idlePositionsRef.current);
+        const batchedOccupied: WorkerPos[] = Array.from(usedSpotIdxs).map((i) => ({
+          x: idleSpots[i].x,
+          y: idleSpots[i].y,
+          facing: 'right' as const,
+        }));
+        const allOccupied = [...externalOccupied, ...batchedOccupied];
+
         // Find an available spot
         const startIdx = Math.floor(Math.random() * idleSpots.length);
         for (let attempt = 0; attempt < idleSpots.length; attempt++) {
@@ -779,17 +772,7 @@ export function LunarOfficeScene({
           if (usedSpotIdxs.has(idx)) continue;
 
           const spot = idleSpots[idx];
-          let tooClose = false;
-          for (const usedIdx of usedSpotIdxs) {
-            const other = idleSpots[usedIdx];
-            // Couch seats can be adjacent — skip overlap check between couch spots
-            const bothGroupSpot = spot.label === other.label && (spot.label === 'couch' || spot.label === 'hookah' || spot.label === 'pingpong');
-            if (!bothGroupSpot && Math.abs(spot.x - other.x) < 80 && Math.abs(spot.y - other.y) < 60) {
-              tooClose = true;
-              break;
-            }
-          }
-          if (!tooClose) {
+          if (!isCandidateBlocked(spot, allOccupied)) {
             usedSpotIdxs.add(idx);
             const isCouch = spot.label === 'couch';
             const isHookah = spot.label === 'hookah';
@@ -860,7 +843,7 @@ export function LunarOfficeScene({
   const idleWanderRef = useRef<number[]>([]);
   useEffect(() => {
     // Send a group of agents to a group spot (hookah or couch)
-    function sendGroup(groupLabel: 'hookah' | 'couch', agents: WorkerId[]) {
+    function sendGroup(groupLabel: 'hookah' | 'couch' | 'pingpong', agents: WorkerId[]) {
       const spots = idleSpots.filter(s => s.label === groupLabel);
       const facing = groupLabel === 'couch' ? 'back' as const : 'front' as const;
 
@@ -941,15 +924,14 @@ export function LunarOfficeScene({
           idleWanderRef.current.push(stopTimer);
         } else {
           // Walk to a random spot — avoid spots occupied by other agents
-          const occupiedPositions = Object.values(idlePositionsRef.current).filter(Boolean) as WorkerPos[];
+          // Considers ALL other workers' actual positions (phase override > idle > home)
+          // so wanderers don't land on top of someone at home or at a phase desk.
+          const occupiedPositions = computeOccupiedPositions(wId, activePhase, runFinalAudit, idlePositionsRef.current);
           const startIdx = Math.floor(Math.random() * idleSpots.length);
           let spot = idleSpots[startIdx];
           for (let attempt = 0; attempt < idleSpots.length; attempt++) {
             const candidate = idleSpots[(startIdx + attempt) % idleSpots.length];
-            const tooClose = occupiedPositions.some(
-              p => Math.abs(p.x - candidate.x) < 60 && Math.abs(p.y - candidate.y) < 40
-            );
-            if (!tooClose) { spot = candidate; break; }
+            if (!isCandidateBlocked(candidate, occupiedPositions)) { spot = candidate; break; }
           }
           const isCouch = spot.label === 'couch';
           const isHookah = spot.label === 'hookah';

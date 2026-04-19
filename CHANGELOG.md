@@ -2,6 +2,32 @@
 
 All notable changes to **The Dev Squad** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [SemVer](https://semver.org/) loosely while pre-`v1.0`.
 
+## [v0.4.2] — 2026-04-19
+
+### Fixed
+
+- **Office wander overlap.** Agents could land on top of each other in the office scene because the wander avoidance only considered other workers' *idle* positions — it ignored workers at home or at a phase override. Surfaced when Eddie was added in v0.4.1: his couch home (1080, 485) coincided exactly with a couch idle spot, so wanderers could walk right onto him. New `computeOccupiedPositions` helper now considers every other worker's actual current position (`phase override > idle > home`). New `isCandidateBlocked` helper preserves the existing group-spot exception (couch / hookah / pingpong allow same-label stacking) but blocks exact-coord collisions unconditionally. Both wander loops in `LunarOfficeScene.tsx` now use the helpers.
+- **TypeScript error baseline cleared.** All 10 pre-existing `tsc --noEmit` errors fixed:
+  - 6 × TS5097 (`.ts` import extension): added `"allowImportingTsExtensions": true` to `tsconfig.json` (one-line fix).
+  - 2 × TS2322 (`securityMode` widening in `orchestrator.ts`): annotated the `let` declaration as `'fast' | 'strict'`.
+  - 1 × TS2345 (Docker child `stdin: null` in `runner.ts`): cast `child as unknown as RunnerChild` with a comment explaining nothing on the docker path reads stdin.
+  - 1 × TS2345 (`'pingpong'` not in `sendGroup` signature in `LunarOfficeScene.tsx`): widened the parameter type to include `'pingpong'`.
+  - `tsc --noEmit` now exits with zero errors.
+
+### Removed
+
+- **Dead code in `LunarOfficeScene.tsx`:**
+  - `pickIdlePositions` function (deterministic seed-based wander picker that lost to the timer-based wander system that ships today).
+  - `gatherSpots` array (planned cluster spots that lost to the `idleSpots` label-based group system that ships today).
+  - Both were defined and never called. Deletion is safe — no compile or runtime change.
+
+### Notes
+
+- All four test files still pass (`pipeline-runtime`, `supervisor-snapshot`, `hook-contract`, `audit-findings`).
+- No version-controlled behavior or API change beyond the overlap fix.
+
+---
+
 ## [v0.4.1] — 2026-04-19
 
 ### Added
@@ -110,6 +136,7 @@ All notable changes to **The Dev Squad** are documented here. Format follows [Ke
 
 ---
 
+[v0.4.2]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.4.2
 [v0.4.1]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.4.1
 [v0.4.0]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.4.0
 [v0.3.15]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.3.15

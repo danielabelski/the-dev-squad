@@ -437,7 +437,10 @@ export class DockerRunner implements Runner {
     child.on('close', cleanupBootstrap);
     child.on('error', cleanupBootstrap);
 
-    return withBackend(child, 'docker');
+    // Docker runs with stdio: ['ignore', 'pipe', 'pipe'] so child.stdin is null.
+    // Nothing on the docker path reads stdin — cast through unknown to satisfy the
+    // RunnerChild interface (which expects Writable) without widening the type.
+    return withBackend(child as unknown as RunnerChild, 'docker');
   }
 
   async cleanup(projectDir: string): Promise<void> {
