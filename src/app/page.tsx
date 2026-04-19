@@ -340,7 +340,8 @@ export default function PipelinePage() {
             <LunarOfficeScene
               activePhase={phase}
               agentStatus={state.agentStatus}
-              latestSpeech={{ A: agentSpeech('A'), B: agentSpeech('B'), C: agentSpeech('C'), D: agentSpeech('D'), E: null, S: agentSpeech('S') }}
+              latestSpeech={{ A: agentSpeech('A'), B: agentSpeech('B'), C: agentSpeech('C'), D: agentSpeech('D'), E: agentSpeech('E'), S: agentSpeech('S') }}
+              runFinalAudit={activeRunFinalAudit}
               onAgentClick={(agent) => setSelectedAgent(agent)}
             />
           </div>

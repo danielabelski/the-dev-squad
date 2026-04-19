@@ -6,7 +6,7 @@ import { PixelSprite } from './PixelSprite';
 import type { Phase, AgentId } from '@/lib/use-pipeline';
 
 
-type WorkerId = 'planner' | 'reviewer' | 'coder' | 'tester' | 'supervisor';
+type WorkerId = 'planner' | 'reviewer' | 'coder' | 'tester' | 'supervisor' | 'auditor';
 
 interface WorkerDef {
   id: WorkerId;
@@ -28,11 +28,11 @@ interface WorkerPos {
 }
 
 const WORKER_TO_AGENT: Record<WorkerId, AgentId> = {
-  planner: 'A', reviewer: 'B', coder: 'C', tester: 'D', supervisor: 'S',
+  planner: 'A', reviewer: 'B', coder: 'C', tester: 'D', supervisor: 'S', auditor: 'E',
 };
-// E (Security Auditor) intentionally omitted — runs only at end of build, not part of the office scene.
+// E (Security Auditor) only renders when the user enabled the Security Audit toggle at build start.
 const AGENT_TO_WORKER: Partial<Record<AgentId, WorkerId>> = {
-  A: 'planner', B: 'reviewer', C: 'coder', D: 'tester', S: 'supervisor',
+  A: 'planner', B: 'reviewer', C: 'coder', D: 'tester', S: 'supervisor', E: 'auditor',
 };
 
 const workers: WorkerDef[] = [
@@ -41,6 +41,7 @@ const workers: WorkerDef[] = [
   { id: 'coder',      agentId: 'C', name: 'Carlos',  title: 'Coder',      color: '#eab308', x: 558, y: 370 },
   { id: 'tester',     agentId: 'D', name: 'Dana',    title: 'Tester',     color: '#ef4444', x: 775, y: 370 },
   { id: 'supervisor', agentId: 'S', name: 'Sal',     title: 'Supervisor', color: '#10b981', x: 990, y: 370 },
+  { id: 'auditor',    agentId: 'E', name: 'Eddie',   title: 'Auditor',    color: '#f43f5e', x: 1080, y: 485 },
 ];
 
 // Home positions — each worker always faces the same direction
@@ -51,6 +52,8 @@ const homePositions: Record<WorkerId, WorkerPos> = {
   coder:      { x: 595, y: 345, facing: 'back' },
   tester:     { x: 805, y: 345, facing: 'back' },
   supervisor: { x: 1015, y: 345, facing: 'back' },
+  // E (Auditor) chills on the couch by the TV when the audit toggle is on but the audit hasn't started.
+  auditor:    { x: 1080, y: 485, facing: 'back' },
 };
 
 // Per-phase position overrides for ACTIVE workers (pipeline movements)
@@ -77,6 +80,12 @@ const phasePositions: Record<string, Partial<Record<WorkerId, WorkerPos>>> = {
   testing: {
     coder:  { x: 780, y: 345, facing: 'right' },   // C stays near D while D tests
     tester: { x: 805, y: 345, facing: 'back' },     // D turns to test
+  },
+  // Optional Phase 4b: E takes A's desk while A wanders to the ping-pong area.
+  // Only fires when state.runFinalAudit is true (orchestrator only emits this phase then).
+  'security-audit': {
+    planner: { x: 200, y: 460, facing: 'right' },   // A walks down to the ping-pong area
+    auditor: { x: 184, y: 345, facing: 'back' },    // E takes A's seat (matches planner home exactly)
   },
   deploy: {
     planner: { x: 184, y: 345, facing: 'back' },    // A at desk ready to deploy
@@ -305,6 +314,45 @@ const agentSpeechPool: Partial<Record<AgentId, Record<string, string[]>>> = {
     ],
     complete: [
       'Good work, team.',
+    ],
+  },
+  E: {
+    concept: [
+      'Just chillin\'.',
+      'Eyes on the screen.',
+      'Standing by.',
+    ],
+    planning: [
+      'Watching how this plan shapes up.',
+      'Letting the team cook.',
+    ],
+    'plan-review': [
+      'Watching B poke holes.',
+      'Standing by.',
+    ],
+    coding: [
+      'Standing by until the build is testable.',
+      'Watching C build.',
+    ],
+    'code-review': [
+      'Letting D do their pass first.',
+      'Almost my turn.',
+    ],
+    testing: [
+      'Tests almost done. My turn next.',
+      'Sharpening my checklist.',
+    ],
+    'security-audit': [
+      'OWASP sweep in progress.',
+      'Reading every file.',
+      'Looking for real exploits, not noise.',
+      'Severity calls coming up.',
+    ],
+    deploy: [
+      'Audit done. Heading back to the couch.',
+    ],
+    complete: [
+      'Solid build. Back to chillin\'.',
     ],
   },
 };
@@ -646,11 +694,13 @@ export function LunarOfficeScene({
   activePhase,
   agentStatus,
   latestSpeech,
+  runFinalAudit = false,
   onAgentClick,
 }: {
   activePhase: string;
   agentStatus: Record<AgentId, string>;
   latestSpeech: Record<AgentId, string | null>;
+  runFinalAudit?: boolean;
   onAgentClick?: (agent: AgentId) => void;
 }) {
   const sceneRef = useRef<HTMLDivElement>(null);
@@ -668,7 +718,7 @@ export function LunarOfficeScene({
 
   const [walkingIds, setWalkingIds] = useState<Set<string>>(new Set());
   const [idlePositions, setIdlePositions] = useState<Record<WorkerId, WorkerPos | null>>({
-    planner: null, reviewer: null, coder: null, tester: null, supervisor: null,
+    planner: null, reviewer: null, coder: null, tester: null, supervisor: null, auditor: null,
   });
   const idlePositionsRef = useRef(idlePositions);
   idlePositionsRef.current = idlePositions;
@@ -685,7 +735,7 @@ export function LunarOfficeScene({
     idleTimerRef.current = [];
 
     // Reset all idle positions — everyone returns home first
-    setIdlePositions({ planner: null, reviewer: null, coder: null, tester: null, supervisor: null });
+    setIdlePositions({ planner: null, reviewer: null, coder: null, tester: null, supervisor: null, auditor: null });
 
     // Mark only pipeline movers as walking
     const overrides = phasePositions[activePhase] || {};
@@ -704,8 +754,9 @@ export function LunarOfficeScene({
 
     // Stagger idle movements — one worker at a time, random delays
     const activeIds = new Set<WorkerId>(Object.keys(overrides) as WorkerId[]);
-    const idleWorkers = (['planner', 'reviewer', 'coder', 'tester', 'supervisor'] as WorkerId[])
-      .filter(id => !activeIds.has(id));
+    const baseIdleWorkers: WorkerId[] = ['planner', 'reviewer', 'coder', 'tester', 'supervisor'];
+    if (runFinalAudit) baseIdleWorkers.push('auditor');
+    const idleWorkers = baseIdleWorkers.filter(id => !activeIds.has(id));
 
     // Shuffle idle workers
     const shuffled = [...idleWorkers].sort(() => Math.random() - 0.5);
@@ -801,7 +852,7 @@ export function LunarOfficeScene({
     return () => {
       window.clearTimeout(stopPipeline);
     };
-  }, [activePhase]);
+  }, [activePhase, runFinalAudit]);
 
   // Periodic idle wandering — independent of phase changes
   // Every 15-25s, pick a random non-active agent and send them somewhere
@@ -852,6 +903,7 @@ export function LunarOfficeScene({
       const delay = 15000 + Math.random() * 10000; // 15-25s
       const timer = window.setTimeout(() => {
         const allIds: WorkerId[] = ['planner', 'reviewer', 'coder', 'tester', 'supervisor'];
+        if (runFinalAudit) allIds.push('auditor');
         // Filter to agents not actually working in the pipeline
         const available = allIds.filter(id => !activeWorkerIdsRef.current.has(id));
         if (available.length === 0) { scheduleWander(); return; }
@@ -942,7 +994,7 @@ export function LunarOfficeScene({
 
     scheduleWander();
     return () => idleWanderRef.current.forEach(t => window.clearTimeout(t));
-  }, [activePhase]);
+  }, [activePhase, runFinalAudit]);
 
   // Speech only shows after walking stops, randomized per agent per phase
   const [showSpeech, setShowSpeech] = useState(false);
@@ -956,12 +1008,12 @@ export function LunarOfficeScene({
       B: getRandomSpeech('B', activePhase),
       C: getRandomSpeech('C', activePhase),
       D: getRandomSpeech('D', activePhase),
-      E: '',
+      E: runFinalAudit ? getRandomSpeech('E', activePhase) : '',
       S: getRandomSpeech('S', activePhase),
     });
     const timer = window.setTimeout(() => setShowSpeech(true), 3200);
     return () => window.clearTimeout(timer);
-  }, [activePhase]);
+  }, [activePhase, runFinalAudit]);
 
   // Determine active workers from agentStatus
   const activeWorkerIds = new Set<WorkerId>();
@@ -1219,7 +1271,7 @@ export function LunarOfficeScene({
           ))}
 
           {/* Agent characters */}
-          {workers.map((w) => {
+          {workers.filter(w => w.id !== 'auditor' || runFinalAudit).map((w) => {
             const wId = w.id as WorkerId;
             const phaseOverride = phasePositions[activePhase]?.[wId];
             const idleOverride = idlePositions[wId];

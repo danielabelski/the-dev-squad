@@ -37,6 +37,7 @@ const spriteFile: Record<string, string> = {
   coder:      '/sprites/agent_c.png',
   tester:     '/sprites/agent_d.png',
   supervisor: '/sprites/agent_s.png',
+  auditor:    '/sprites/agent_e.png',
 };
 
 function getRow(facing: string): number {
